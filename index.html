@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ideation Board</title>
+<meta name="description" content="Facilitation board for a 90-minute AI opportunity workshop with Watches of Switzerland Finance and Purchasing: run sheet, systems map, process walk, live opportunity capture, second viewpoint reveal, Excel export.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=Manrope:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="engine/scrollcraft.css">
+<link rel="stylesheet" href="styles.css">
+<script>
+  // Theme: follow the system, allow an explicit override from Settings.
+  (function () {
+    try {
+      var t = localStorage.getItem('wos.theme');
+      if (t) document.documentElement.setAttribute('data-theme', t);
+    } catch (e) {}
+  })();
+</script>
+</head>
+<body>
+<div class="app">
+  <aside class="nav" aria-label="Sections">
+    <div class="brand">
+      <div class="brand__client" id="brandClient">Watches of Switzerland</div>
+      <div class="brand__sub">Finance and Purchasing. AI opportunity workshop.</div>
+    </div>
+    <ul class="navlist" id="navlist">
+      <li><button class="navbtn" data-view="runsheet"><span>Run sheet</span><span class="navbtn__k">1</span></button></li>
+      <li><button class="navbtn" data-view="systems"><span>Systems</span><span class="navbtn__k">2</span></button></li>
+      <li><button class="navbtn" data-view="process"><span>Process walk</span><span class="navbtn__k">3</span></button></li>
+      <li><button class="navbtn" data-view="opportunities"><span>Opportunities</span><span class="badge badge--zero" id="opBadge">0</span></button></li>
+      <li><button class="navbtn" data-view="second"><span>Second viewpoint</span><span class="navbtn__k" id="secondLock">locked</span></button></li>
+      <li class="fac"><button class="navbtn" data-view="live"><span>Live capture</span><span class="navbtn__k">6</span></button></li>
+      <li class="fac"><button class="navbtn" data-view="settings"><span>Settings</span><span class="navbtn__k">7</span></button></li>
+    </ul>
+    <div class="nav__foot">
+      <div class="status"><span class="dot" id="aiDot"></span><span id="aiStatus">AI idle</span></div>
+      <div class="status"><span class="dot" id="srcDot"></span><span id="srcStatus">No transcript source</span></div>
+      <div class="status small muted" id="modeStatus">Standalone</div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="topbar__now">
+        <span class="topbar__block" id="nowBlock">Not started</span>
+        <span class="topbar__time" id="nowTime">00:00</span>
+      </div>
+      <div class="topbar__actions">
+        <button class="btn btn--sm btn--ghost fac" id="btnTimer" title="Start or pause the block timer (Space)">Start timer</button>
+        <button class="btn btn--sm btn--ghost fac" id="btnNext" title="Next block (N)">Next block</button>
+        <button class="btn btn--sm" id="btnPresent" title="Toggle presentation mode (P)">Present</button>
+      </div>
+    </header>
+    <div id="view" class="view"></div>
+  </main>
+</div>
+
+<div class="sheet-backdrop" id="sheetBackdrop"></div>
+<aside class="sheet" id="sheet" aria-hidden="true">
+  <div class="sheet__head"><h3 id="sheetTitle">Edit</h3><button class="btn btn--ghost btn--sm" id="sheetClose">Close</button></div>
+  <div class="sheet__body" id="sheetBody"></div>
+  <div class="sheet__foot"><button class="btn btn--ghost btn--danger" id="sheetDelete">Delete</button><button class="btn btn--primary" id="sheetSave">Save</button></div>
+</aside>
+<div class="toast" id="toast"></div>
+
+<script src="vendor/xlsx.full.min.js"></script>
+<script src="data/seed.js"></script>
+<script src="engine/scrollcraft.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
