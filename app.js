@@ -470,9 +470,9 @@
     }
   }
   function head(title, lede, actions) {
-    return '<div class="view__head"><div><h1>' + title + '</h1>' + (lede ? '<p>' + lede + '</p>' : '') + '</div><div class="row">' + (actions || '') + '</div></div>';
+    return '<div class="view__head"><div><h1>' + title + '</h1>' + (lede ? '<p>' + lede + '</p>' : '') + '</div><div class="row">' + (actions || '') + '</div></div>' + (window.HELP ? HELP.howtoHtml(UI.view) : '');
   }
-  function chip(cls, txt) { return '<span class="chip ' + cls + '">' + esc(txt) + '</span>'; }
+  function chip(cls, txt) { var tip = window.HELP ? HELP.chipTip(cls, txt) : ''; return '<span class="chip ' + cls + '"' + (tip ? ' data-tip="' + esc(tip) + '"' : '') + '>' + esc(txt) + '</span>'; }
   function opCountFor(phaseName) { return S.opportunities.filter(function (o) { return o.phase === phaseName && o.status !== 'Merged'; }); }
 
   function vRunsheet() {
@@ -480,9 +480,17 @@
     var total = SEED.agenda.reduce(function (a, b) { return a + b.mins; }, 0);
     var html = head('The 90 minutes', 'Facilitator view. The room sees the block title and the clock at the top; the questions are yours.',
       '<button class="btn btn--primary fac" data-action="start">' + (S.agendaIdx < 0 ? 'Start the session' : 'Restart from block 1') + '</button>');
+    if (!guideDismissed()) {
+      html += '<div class="card guide fac"><div><h3>New here? Three things to do first</h3><ol>' +
+        '<li>Hover anything on this page for a plain-words note. Gold tag: for you. Green tag: the room sees it.</li>' +
+        '<li>Open <b>Live capture</b> and press <b>Demo transcript</b>. Watch the Opportunities badge climb.</li>' +
+        '<li>Come back here and press <b>Start the session</b> when the room is ready.</li></ol>' +
+        '<div class="guide__steps"><button class="btn btn--sm btn--primary" data-action="openhelp">Open the full guide</button><button class="btn btn--sm" data-view="live">Try the demo</button></div></div>' +
+        '<button class="btn btn--sm btn--ghost" data-action="dismissguide">Hide</button></div>';
+    }
     html += '<div class="frame-strip">' +
-      '<div class="frame-cell"><div class="k">North star</div><div class="v">' + esc(c.northStar) + '</div></div>' +
-      '<div class="frame-cell"><div class="k">Scope test</div><div class="v">' + esc(c.scopeCriterion) + '</div></div>' +
+      '<div class="frame-cell" data-tip="' + esc(HELP.tips.other.frameNorth) + '" data-who="both"><div class="k">North star</div><div class="v">' + esc(c.northStar) + '</div></div>' +
+      '<div class="frame-cell" data-tip="' + esc(HELP.tips.other.frameScope) + '" data-who="both"><div class="k">Scope test</div><div class="v">' + esc(c.scopeCriterion) + '</div></div>' +
       '<div class="frame-cell"><div class="k">The room</div><div class="v">' + c.headcount + ' people · Finance and Purchasing</div></div>' +
       '<div class="frame-cell"><div class="k">Plan</div><div class="v">' + SEED.agenda.length + ' blocks · ' + total + ' minutes</div></div></div>';
     html += '<div class="agenda">';
@@ -775,11 +783,13 @@
     $('#btnPresent').addEventListener('click', togglePresent);
     $('#sheetClose').addEventListener('click', closeSheet); $('#sheetBackdrop').addEventListener('click', closeSheet);
     $('#sheetSave').addEventListener('click', saveSheet); $('#sheetDelete').addEventListener('click', deleteSheet);
+    $('#btnHelp').addEventListener('click', openHelp); $('#helpClose').addEventListener('click', closeHelp); $('#helpBackdrop').addEventListener('click', closeHelp);
 
     var view = $('#view');
     view.addEventListener('click', function (e) {
       var b = e.target.closest('[data-action]');
       if (b) { handleAction(b.dataset.action, b, e); return; }
+      var nv = e.target.closest('[data-view]'); if (nv) { go(nv.dataset.view); return; }
       var seg;
       if ((seg = e.target.closest('#opsMode button'))) { UI.opsMode = seg.dataset.m; render(); return; }
       if ((seg = e.target.closest('#fnFilter button'))) { UI.filter.fn = seg.dataset.f; render(); return; }
@@ -809,7 +819,8 @@
     });
 
     document.addEventListener('keydown', function (e) {
-      if (e.target.matches('input,textarea,select,[contenteditable]') || $('#sheet').classList.contains('open')) { if (e.key === 'Escape') closeSheet(); return; }
+      if (e.key === 'Escape') { closeSheet(); closeHelp(); return; }
+      if (e.target.matches('input,textarea,select,[contenteditable]') || $('#sheet').classList.contains('open') || $('#help').classList.contains('open')) return;
       var map = { '1': 'runsheet', '2': 'systems', '3': 'process', '4': 'opportunities', '5': 'second', '6': 'live', '7': 'settings' };
       if (map[e.key]) { if (UI.present && (e.key === '6' || e.key === '7')) return; go(map[e.key]); }
       else if (e.key === 'p' || e.key === 'P') togglePresent();
@@ -854,9 +865,14 @@
         if ($('#wisprMeeting')) S.settings.wisprMeetingId = $('#wisprMeeting').value;
         save(); setModeStatus(); toast('Settings saved'); break;
       case 'resetall': if (confirm('Reset everything on this board? Export first if you want to keep it.')) { localStorage.removeItem('wos.state'); location.reload(); } break;
+      case 'openhelp': openHelp(); break;
+      case 'dismissguide': try { localStorage.setItem('wos.guide', '1'); } catch (e) {} render(); break;
       case 'resetsystems': S.systems = JSON.parse(JSON.stringify(SEED.systems)); save(); toast('Systems reset'); break;
     }
   }
+  function guideDismissed() { try { return !!localStorage.getItem('wos.guide'); } catch (e) { return false; } }
+  function openHelp() { $('#helpBody').innerHTML = HELP.guideHtml(); $('#help').classList.add('open'); $('#help').setAttribute('aria-hidden', 'false'); $('#helpBackdrop').classList.add('open'); $('#helpBody').scrollTop = 0; }
+  function closeHelp() { $('#help').classList.remove('open'); $('#help').setAttribute('aria-hidden', 'true'); $('#helpBackdrop').classList.remove('open'); try { localStorage.setItem('wos.seen', '1'); } catch (e) {} }
   function togglePresent() { UI.present = !UI.present; document.body.classList.toggle('present', UI.present); $('#btnPresent').textContent = UI.present ? 'Exit present' : 'Present'; if (UI.present && (UI.view === 'live' || UI.view === 'settings')) go('opportunities'); }
   function applyTheme() { var t = S.settings.theme; if (t) document.documentElement.setAttribute('data-theme', t); else document.documentElement.removeAttribute('data-theme'); try { if (t) localStorage.setItem('wos.theme', t); else localStorage.removeItem('wos.theme'); } catch (e) {} }
 
@@ -871,6 +887,7 @@
   setInterval(tickTimer, 500); tickTimer();
   setModeStatus();
   probeCapabilities();
+  if (window.HELP) { HELP.mount(); var seen = false; try { seen = !!localStorage.getItem('wos.seen'); } catch (e) {} if (!seen) openHelp(); }
   if (S.settings.autoExtract && fullTranscript().length > S.consumedChars) scheduleExtract();
 
   window.WOS = { state: S, addTranscript: addTranscript, addOpportunity: addOpportunity, extractNow: extractNow, exportXlsx: exportXlsx };

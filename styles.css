@@ -335,6 +335,40 @@ table.reg select, table.reg input { padding: 4px 6px; font-size: 0.82rem; }
 .toast { position: fixed; left: 50%; bottom: 24px; translate: -50% 0; z-index: 100; padding: 10px 16px; border-radius: 999px; background: var(--sc-ink); color: var(--sc-canvas); font-weight: 700; font-size: 0.85rem; box-shadow: var(--sc-e2); opacity: 0; transition: opacity var(--sc-d-base); pointer-events: none; }
 .toast.show { opacity: 1; }
 
+/* ------------------------------------------------------------ help -- */
+.tip {
+  position: fixed; z-index: 200; max-width: 300px;
+  padding: 8px 11px; border-radius: var(--sc-r-md);
+  background: var(--sc-ink); color: var(--sc-canvas);
+  font-size: 0.82rem; line-height: 1.45; font-weight: 500;
+  box-shadow: var(--sc-e2); pointer-events: none; text-wrap: pretty;
+}
+.tip__who { display: inline-block; font-size: 0.68rem; font-weight: 800; letter-spacing: 0.03em; padding: 1px 7px; border-radius: 3px; margin: 0 8px 4px 0; vertical-align: middle; }
+.tip__who--you  { background: var(--sc-accent); color: var(--sc-accent-ink); }
+.tip__who--room { background: var(--ok); color: #10140f; }
+.tip__who--both { background: linear-gradient(90deg, var(--sc-accent) 50%, var(--ok) 50%); color: #10140f; }
+.guide__section .tip__who { margin: 0 4px 0 0; }
+.howto { margin: -8px 0 var(--sc-5); border: 1px solid var(--line); border-radius: var(--sc-r-md); background: var(--sc-surface); }
+.howto summary { cursor: pointer; padding: 9px 14px; font-weight: 700; font-size: 0.85rem; color: var(--sc-accent); list-style: none; }
+.howto summary::before { content: "?"; display: inline-flex; width: 18px; height: 18px; border-radius: 50%; align-items: center; justify-content: center; background: var(--sc-accent); color: var(--sc-accent-ink); font-size: 0.72rem; margin-right: 8px; }
+.howto[open] summary::before { content: "×"; }
+.howto ol { margin: 0; padding: 0 16px 12px 36px; font-size: 0.92rem; }
+.howto li { margin: 5px 0; max-width: 70ch; }
+.guide { display: grid; grid-template-columns: 1fr auto; gap: var(--sc-4); align-items: start; margin-bottom: var(--sc-5); border-color: color-mix(in oklab, var(--sc-accent) 45%, transparent); }
+.guide ol { margin: 8px 0 0; padding-left: 1.2em; }
+.guide li { margin: 4px 0; }
+.guide__steps { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.sheet--help { width: min(640px, 100vw); }
+.help__body { gap: var(--sc-5); }
+.guide__section h3 { margin-bottom: 8px; color: var(--sc-accent); }
+.guide__section p { color: var(--sc-ink-soft); margin-bottom: 8px; max-width: 62ch; }
+.guide__section ol { margin: 0; padding-left: 1.2em; }
+.guide__section li { margin: 6px 0; max-width: 62ch; }
+.terms { display: grid; grid-template-columns: 140px 1fr; gap: 8px 14px; margin: 0; font-size: 0.92rem; }
+.terms dt { font-weight: 800; color: var(--sc-ink); }
+.terms dd { margin: 0; color: var(--sc-ink-soft); }
+@media (max-width: 560px) { .terms { grid-template-columns: 1fr; } .terms dd { margin-bottom: 6px; } .guide { grid-template-columns: 1fr; } }
+
 /* ---------------------------------------------------- presentation mode -- */
 body.present .fac { display: none !important; }
 body.present { font-size: 18px; }

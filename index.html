@@ -50,9 +50,10 @@
         <span class="topbar__time" id="nowTime">00:00</span>
       </div>
       <div class="topbar__actions">
-        <button class="btn btn--sm btn--ghost fac" id="btnTimer" title="Start or pause the block timer (Space)">Start timer</button>
-        <button class="btn btn--sm btn--ghost fac" id="btnNext" title="Next block (N)">Next block</button>
-        <button class="btn btn--sm" id="btnPresent" title="Toggle presentation mode (P)">Present</button>
+        <button class="btn btn--sm" id="btnHelp">How to use</button>
+        <button class="btn btn--sm btn--ghost fac" id="btnTimer">Start timer</button>
+        <button class="btn btn--sm btn--ghost fac" id="btnNext">Next block</button>
+        <button class="btn btn--sm" id="btnPresent">Present</button>
       </div>
     </header>
     <div id="view" class="view"></div>
@@ -66,11 +67,18 @@
   <div class="sheet__foot"><button class="btn btn--ghost btn--danger" id="sheetDelete">Delete</button><button class="btn btn--primary" id="sheetSave">Save</button></div>
 </aside>
 <div class="toast" id="toast"></div>
+<div class="tip" id="tip" role="tooltip" hidden></div>
+<div class="sheet-backdrop" id="helpBackdrop"></div>
+<aside class="sheet sheet--help" id="help" aria-hidden="true" aria-label="Guide">
+  <div class="sheet__head"><h3>How to use this board</h3><button class="btn btn--ghost btn--sm" id="helpClose">Close</button></div>
+  <div class="sheet__body help__body" id="helpBody"></div>
+</aside>
 
 <script src="vendor/xlsx.full.min.js"></script>
 <script>if (!window.XLSX) document.write('<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"><\/script>');</script>
 <script src="data/seed.js"></script>
 <script src="engine/scrollcraft.js"></script>
+<script src="help.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
