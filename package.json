@@ -1,0 +1,10 @@
+{
+  "name": "ideation-board",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Facilitation board for AI opportunity workshops: static front-end, Vercel functions, Supabase backend.",
+  "scripts": {
+    "dev": "python3 -m http.server 8765"
+  },
+  "engines": { "node": ">=18" }
+}

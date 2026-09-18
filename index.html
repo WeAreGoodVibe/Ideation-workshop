@@ -11,11 +11,11 @@
 <link rel="stylesheet" href="engine/scrollcraft.css">
 <link rel="stylesheet" href="styles.css">
 <script>
-  // Theme: follow the system, allow an explicit override from Settings.
+  // Theme: light by default; dark only when chosen in Settings.
   (function () {
     try {
       var t = localStorage.getItem('wos.theme');
-      if (t) document.documentElement.setAttribute('data-theme', t);
+      if (t === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
     } catch (e) {}
   })();
 </script>
@@ -28,7 +28,7 @@
       <div class="brand__sub">Finance and Purchasing. AI opportunity workshop.</div>
     </div>
     <ul class="navlist" id="navlist">
-      <li><button class="navbtn" data-view="runsheet"><span>Run sheet</span><span class="navbtn__k">1</span></button></li>
+      <li class="part-hide"><button class="navbtn" data-view="runsheet"><span>Run sheet</span><span class="navbtn__k">1</span></button></li>
       <li><button class="navbtn" data-view="systems"><span>Systems</span><span class="navbtn__k">2</span></button></li>
       <li><button class="navbtn" data-view="process"><span>Process walk</span><span class="navbtn__k">3</span></button></li>
       <li><button class="navbtn" data-view="opportunities"><span>Opportunities</span><span class="badge badge--zero" id="opBadge">0</span></button></li>
@@ -36,7 +36,7 @@
       <li class="fac"><button class="navbtn" data-view="live"><span>Live capture</span><span class="navbtn__k">6</span></button></li>
       <li class="fac"><button class="navbtn" data-view="settings"><span>Settings</span><span class="navbtn__k">7</span></button></li>
     </ul>
-    <div class="nav__foot">
+    <div class="nav__foot fac">
       <div class="status"><span class="dot" id="aiDot"></span><span id="aiStatus">AI idle</span></div>
       <div class="status"><span class="dot" id="srcDot"></span><span id="srcStatus">No transcript source</span></div>
       <div class="status small muted" id="modeStatus">Standalone</div>
@@ -53,7 +53,7 @@
         <button class="btn btn--sm" id="btnHelp">How to use</button>
         <button class="btn btn--sm btn--ghost fac" id="btnTimer">Start timer</button>
         <button class="btn btn--sm btn--ghost fac" id="btnNext">Next block</button>
-        <button class="btn btn--sm" id="btnPresent">Present</button>
+        <button class="btn btn--sm part-hide" id="btnPresent">Present</button>
       </div>
     </header>
     <div id="view" class="view"></div>
@@ -78,7 +78,9 @@
 <script>if (!window.XLSX) document.write('<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"><\/script>');</script>
 <script src="data/seed.js"></script>
 <script src="engine/scrollcraft.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="help.js"></script>
+<script src="sb.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

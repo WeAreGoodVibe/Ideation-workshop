@@ -51,6 +51,15 @@ window.HELP = (function () {
       savesettings: 'Save these settings in this browser.',
       resetall: 'Wipe the board, transcript and settings from this browser. Export first.',
       resetsystems: 'Put the systems list back to the starting guess.',
+      newidea: 'Add an idea of your own. It lands on the board for everyone, with your name on it.',
+      copylink: 'Copy the link participants open on their phone.',
+      sendlink: 'We email you a sign-in link. No password.',
+      joincode: 'Enter the code shown on the screen to join this workshop.',
+      signout: 'Sign out of the board on this device.',
+      openws: 'Open this workshop on the board.',
+      createws: 'Create a new workshop from the template. You become its facilitator.',
+      showtoken: 'Reveal the bridge token for this workshop.',
+      copytoken: 'Copy the bridge token.',
       dismissguide: 'Hide this starter card. The full guide stays under the How to use button.',
       openhelp: 'Open the full guide.'
     },
@@ -182,7 +191,7 @@ window.HELP = (function () {
      press it while the room watches. Anything not listed defaults by group. */
   var who = {
     view: { runsheet: 'you', systems: 'both', process: 'both', opportunities: 'both', second: 'both', live: 'you', settings: 'you' },
-    action: { validate: 'both', vote: 'both', export: 'both', reveal: 'both', promote: 'both' },
+    action: { validate: 'both', vote: 'both', export: 'both', reveal: 'both', promote: 'both', newidea: 'room', joincode: 'room', sendlink: 'room' },
     id: { opBadge: 'room', secondLock: 'room', nowBlock: 'room', nowTime: 'room', tOps: 'room' },
     mode: { cards: 'both', table: 'you' },
     chip: 'room', phaseCount: 'room', blockMins: 'room', field: 'you'
@@ -243,8 +252,14 @@ window.HELP = (function () {
     { title: 'What the words mean', terms: [['Opportunity', 'One idea: a task Claude could carry. It has a title, a team, a phase, a surface, a build type and a status.'], ['Function', 'Which team it belongs to: Finance, Purchasing, Both, or Org-wide.'], ['Phase', 'Where in the process the idea sits, for example Accounts payable or Purchase orders. The Process walk view counts ideas per phase.'], ['Surface', 'Which part of Claude does the work: Chat, a Project, a Scheduled Task, Cowork, a Skill, or a Connector setup.'], ['Build type', 'What has to be made: a Skill, a Scheduled task, a Setup, a Project, or a Workflow redesign.'], ['Status', 'Open, Validated, Emerging, Parked or Merged. Hover any status tag for the meaning.'], ['Second viewpoint', 'Ideas from outside the room: twelve prepared in advance plus what Claude writes from today’s transcript. Each one says why the room did not raise it.'], ['Votes', 'Dot votes. Each person gets three in block 6. The list sorts by votes.'], ['Transcript source', 'Where the words come from: the Wispr Flow meeting, the laptop mic, dictation into the box, a JSON feed, or the demo.']] },
     { title: 'Keys', terms: [['1 to 7', 'Switch views.'], ['Space', 'Start or pause the block clock.'], ['N', 'Next block.'], ['P', 'Presentation mode on or off.'], ['Esc', 'Close a panel.']] }
   ];
+  var participantGuide = [
+    { title: 'You are a participant', body: '<p>The facilitator drives the session from the big screen. This page on your phone is for three things.</p>' },
+    { title: 'What you can do', steps: ['Read the ideas as they land. New ones appear on their own; no need to refresh.', 'Vote. You have a few dots. Press plus on an idea to spend one, minus to take it back. The board sorts by votes as you go.', 'Add an idea the room missed. Press Add an idea, one line is enough. It lands with your name on it.'] },
+    { title: 'What the tags mean', terms: [['Finance / Purchasing / Both / Org-wide', 'Whose work the idea belongs to.'], ['Scheduled Task, Skill, Project, Cowork', 'Which part of Claude would carry it. Hover any tag for a plain-words note.'], ['Open / Validated / Parked', 'Where the idea is: heard, confirmed by the room, or set aside with a reason.']] }
+  ];
   function guideHtml() {
-    return guide.map(function (g) {
+    var src = document.body.classList.contains('participant') ? participantGuide : guide;
+    return src.map(function (g) {
       var h = '<section class="guide__section"><h3>' + g.title + '</h3>';
       if (g.body) h += g.body;
       if (g.steps) h += '<ol>' + g.steps.map(function (s) { return '<li>' + s + '</li>'; }).join('') + '</ol>';

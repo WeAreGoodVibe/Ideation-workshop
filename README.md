@@ -16,7 +16,10 @@ A facilitation board for a 90-minute AI opportunity workshop with the Finance an
 
 Press **P** for presentation mode: facilitator-only controls disappear and type grows for the projector. Keys 1 to 7 switch views, Space starts and pauses the block timer, N moves to the next block.
 
-## Three ways to run it
+## Four ways to run it
+
+**0. Deployed with the backend (the real thing).** Vercel hosts the page and two small functions; Supabase holds organisations, workshops, members, ideas and votes with row level security and magic-link sign-in. Participants open the link on their phone, enter the join code, and vote from their seat. Every screen updates live. Setup in `docs/DEPLOY.md`.
+
 
 **1. Published as a claude.ai Artifact (recommended for the live session).**
 The page probes `claude.use()` for four capabilities and lights up what it finds:
@@ -47,6 +50,10 @@ Live capture has a demo transcript: eight voices from a made-up WoS session, one
 ```
 index.html          shell, nav, sheet, toast
 app.js              state, views, AI loop, sources, export
+sb.js               Supabase layer: auth, workshop load, realtime, writes
+help.js             tooltips, per-view how-to, the guide
+api/                Vercel functions: config, extract (Claude, server key), ingest (bridge)
+supabase/schema.sql tables, policies, triggers, RPCs, realtime
 styles.css          tokens and composition on top of the scroll-craft floor
 data/seed.js        client context, run sheet, phases, systems, question bank, blind spots, demo transcript
 engine/             scroll-craft engine (unmodified) used for the reveal
