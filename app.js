@@ -122,7 +122,7 @@
   function setAiStatus(state, text) {
     var dot = $('#aiDot');
     dot.className = 'dot' + (state === 'busy' ? ' dot--busy' : state === 'live' ? ' dot--live' : state === 'bad' ? ' dot--bad' : '');
-    $('#aiStatus').textContent = text || ({ busy: 'AI reading…', live: 'AI listening', idle: 'AI ready', off: 'AI off: add a key or publish as an Artifact', bad: 'AI error, see Live' })[state];
+    $('#aiStatus').textContent = text || ({ busy: 'AI reading…', live: 'AI listening', idle: 'AI ready', off: (SBA() ? 'AI off: server key missing, see Settings' : 'AI off: add a key or publish as an Artifact'), bad: 'AI error, see Live' })[state];
   }
   function setSrcStatus(state, text) {
     var dot = $('#srcDot');
@@ -711,6 +711,11 @@
       '<span class="k">Wispr Flow</span><span>' + (CAP.mcp ? 'Connector reachable' : 'Not reachable from a standalone page. Dictate into Live capture instead, or use the feed.') + '</span>' +
       '<span class="k">Shared board</span><span>' + (SBA() ? 'Yes: every signed-in member sees the same board live' : CAP.db ? 'Yes: everyone with the link sees the same register' : 'No: this browser only. Export and share the file.') + '</span>' +
       '<span class="k">Excel export</span><span>' + (CAP.downloads ? 'Via the Artifact save prompt' : 'Direct browser download') + '</span></div></div>';
+    if (SBA()) {
+      html += '<div class="card stack"><h3>AI brain</h3>' + (serverAI()
+        ? '<p>Claude runs on the server with a key nobody in the room can see. Nothing to add here.</p>'
+        : '<p><b>The server has no Claude key yet.</b> In Vercel: Settings → Environment Variables → add <code>ANTHROPIC_API_KEY</code> for Production, then Deployments → Redeploy. Reload this page afterwards. Do not paste the key into this site.</p>') + '</div>';
+    } else
     html += '<div class="card stack"><h3>AI brain (standalone)</h3><div class="field-row">' +
       '<label class="field">Anthropic API key<input type="password" id="setKey" value="' + esc(s.apiKey) + '" placeholder="sk-ant-…"></label>' +
       '<label class="field">Model<select id="setModel">' + ['claude-opus-5', 'claude-sonnet-5', 'claude-fable-5-1', 'claude-haiku-4-5'].map(function (m) { return '<option' + (s.model === m ? ' selected' : '') + '>' + m + '</option>'; }).join('') + '</select></label>' +
