@@ -69,6 +69,20 @@ Sign-in: facilitators use an emailed magic link. Participants sign in anonymousl
 
 Verified with Playwright against a stubbed backend and a stubbed Claude reply (scripts in the session scratchpad, not the repo): creation config, run sheet blocks, join link text, empty states, a read adding one system and one phase and deduplicating existing ones, Start blank. Not yet run against the live Supabase project: create a fresh workshop on the live site and confirm the Systems and Process walk views are empty.
 
+## Changed on 18 September, third session (participants can add, names always, any number of votes)
+
+**Phases are rows now.** New table `phases` (migration `participant_content`), one row per phase with `source` (Facilitator, Participant, AI), `added_by` and `created_by`. The same three columns were added to `systems`. A before-insert trigger stamps `created_by` from the caller. The phases that older workshops kept in `config.phases` were moved into rows and the key removed from config. Realtime carries `phases`; `systems` and `phases` have replica identity full so deletes reach every screen.
+
+**Participants add, edit and delete their own.** Policies: facilitators do anything; members insert with `source = 'Participant'` and update or delete rows where `created_by = auth.uid()` and source is Participant. Same for opportunities (a delete policy was added). In the page, `canEdit(row)` decides which cards show "Edit or delete". Claude's rows are tagged "Heard by Claude"; everything else shows "Added by <name>".
+
+**Nobody gets in without a name.** `enterWorkshop` checks the member's `display_name`; if it is empty, a "What is your name?" screen blocks entry (phone or laptop, new or old session). The join form also always requires a name. `SB.setName` writes `org_members.display_name` and the user metadata.
+
+**Votes per person is any number.** The creation form has no maximum, Settings → This workshop has an editable "Votes per person" with Save, and the `votes.dots` check no longer caps at 20. All wording says votes, with "one dot is one vote" in the tips.
+
+**Business name and teams come from the workshop.** `#brandClient` and the new `#brandSub` are set from the workshop config; index.html no longer names Watches of Switzerland. Export file names use the client name.
+
+Verified with Playwright against the fake backend: facilitator creates a workshop, a read adds an AI phase and system, a hand-added phase carries the facilitator's name, votes per person saves; a participant opening the join link is asked for a name, then adds a system and a phase with their name on them, sees Edit or delete only on their own rows, and adds, edits and deletes their own idea. Not yet exercised on the live project: a participant phone against the real policies.
+
 ## Dead ends, so the next session does not repeat them
 
 - "AI off" in the sidebar with the key present on Vercel was a stale tab or a preview domain, not a code problem. Check the URL and hard reload before touching anything.

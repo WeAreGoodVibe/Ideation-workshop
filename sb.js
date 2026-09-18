@@ -12,6 +12,7 @@
      SB.openWorkshop(slug)     -> { ok } | { error: 'join' | message }
      SB.user, SB.role, SB.ws, SB.active
      writes: insertOpportunity, updateOpportunity, deleteOpportunity, vote,
+             insertPhase, updatePhase, deletePhase, setName,
              insertSystem, updateSystem, deleteSystem, updateWorkshop, clearPrepared,
              addTranscript, setAIIdeas, api(mode, prompt)
      admin:  listOrgs, createOrg, listWorkshops, createWorkshop, members,
@@ -20,7 +21,7 @@
 window.SB = (function () {
   'use strict';
 
-  var client = null, cfg = null, session = null, user = null, ws = null, role = null, org = null;
+  var client = null, cfg = null, session = null, user = null, ws = null, role = null, org = null, me = null;
   var active = false, channel = null, hooks = {}, refreshT = {}, myDots = {}, tallies = {}, quiet = false;
 
   function on(name, fn) { hooks[name] = fn; }
@@ -82,10 +83,19 @@ window.SB = (function () {
     ws = q.data;
     var rr = await client.rpc('my_role', { p_ws: ws.id }); role = rr.data || 'participant';
     var o = await client.from('orgs').select('*').eq('id', ws.org_id).maybeSingle(); org = o.data;
+    var m = await client.from('org_members').select('*').eq('org_id', ws.org_id).eq('user_id', user.id).maybeSingle(); me = m.data;
     active = true;
     await refreshAll();
     subscribe();
     return { ok: true };
+  }
+  /* The name that goes on votes, ideas, systems and phases. */
+  function myName() { return (me && me.display_name) || (user && user.user_metadata && user.user_metadata.display_name) || ''; }
+  async function setName(name) {
+    name = String(name || '').trim(); if (!name) return;
+    if (ws) { var r = await client.from('org_members').update({ display_name: name }).eq('org_id', ws.org_id).eq('user_id', user.id); if (r.error) fail(r.error, 'Could not save your name'); }
+    try { await client.auth.updateUser({ data: { display_name: name } }); } catch (e) {}
+    if (me) me.display_name = name; else me = { display_name: name };
   }
   async function joinWithCode(slug, code, name) {
     ls('wos.join', { name: name || '', slug: slug, code: code });
@@ -103,13 +113,14 @@ window.SB = (function () {
       client.from('vote_tallies').select('*').eq('workshop_id', id),
       client.from('votes').select('opportunity_id,dots').eq('workshop_id', id).eq('user_id', user.id),
       client.from('second_ideas').select('*').eq('workshop_id', id).order('sort'),
-      fac ? client.from('transcript_chunks').select('*').eq('workshop_id', id).order('id') : Promise.resolve({ data: [] })
+      fac ? client.from('transcript_chunks').select('*').eq('workshop_id', id).order('id') : Promise.resolve({ data: [] }),
+      client.from('phases').select('*').eq('workshop_id', id).order('sort')
     ];
     var r = await Promise.all(reqs);
     ws = r[0].data || ws;
     tallies = {}; (r[3].data || []).forEach(function (t) { tallies[t.opportunity_id] = t; });
     myDots = {}; (r[4].data || []).forEach(function (v) { myDots[v.opportunity_id] = v.dots; });
-    emit('data', { workshop: ws, systems: r[1].data || [], opportunities: (r[2].data || []).map(mapOp), second: r[5].data || [], transcript: r[6].data || [], full: true });
+    emit('data', { workshop: ws, systems: r[1].data || [], phases: r[7].data || [], opportunities: (r[2].data || []).map(mapOp), second: r[5].data || [], transcript: r[6].data || [], full: true });
   }
   function mapOp(row) {
     var t = tallies[row.id] || {};
@@ -122,6 +133,7 @@ window.SB = (function () {
   var refreshers = {
     workshops: async function () { var r = await client.from('workshops').select('*').eq('id', ws.id).maybeSingle(); if (r.data) { ws = r.data; emit('data', { workshop: ws }); } },
     systems: async function () { var r = await client.from('systems').select('*').eq('workshop_id', ws.id).order('sort'); emit('data', { systems: r.data || [] }); },
+    phases: async function () { var r = await client.from('phases').select('*').eq('workshop_id', ws.id).order('sort'); emit('data', { phases: r.data || [] }); },
     opportunities: async function () {
       var r = await Promise.all([client.from('opportunities').select('*').eq('workshop_id', ws.id).order('seq'), client.from('vote_tallies').select('*').eq('workshop_id', ws.id), client.from('votes').select('opportunity_id,dots').eq('workshop_id', ws.id).eq('user_id', user.id)]);
       tallies = {}; (r[1].data || []).forEach(function (t) { tallies[t.opportunity_id] = t; });
@@ -136,7 +148,7 @@ window.SB = (function () {
   function subscribe() {
     unsubscribe();
     channel = client.channel('ws-' + ws.id);
-    ['workshops', 'systems', 'opportunities', 'votes', 'second_ideas'].forEach(function (t) {
+    ['workshops', 'systems', 'phases', 'opportunities', 'votes', 'second_ideas'].forEach(function (t) {
       channel.on('postgres_changes', { event: '*', schema: 'public', table: t, filter: (t === 'workshops' ? 'id' : 'workshop_id') + '=eq.' + ws.id }, function () { refresh(t); });
     });
     channel.subscribe(function (status) { if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') { setTimeout(function () { if (active) subscribe(); }, 4000); } });
@@ -172,7 +184,11 @@ window.SB = (function () {
     if (r.error) { emit('toast', /budget/.test(r.error.message) ? 'No dots left. Take one back from another idea first.' : 'Vote failed: ' + r.error.message); return null; }
     refresh('opportunities'); return r.data;
   }
-  async function insertSystem(s) { var r = await client.from('systems').insert({ workshop_id: ws.id, name: s.name, category: s.category || '', used_by: s.usedBy || '', connector: s.connector || '', status: s.status || 'assumed', note: s.note || '', sort: s.sort || 99 }); if (r.error) fail(r.error, 'Could not add'); refresh('systems'); }
+  function sourceFor(given) { return given || (role === 'facilitator' ? 'Facilitator' : 'Participant'); }
+  async function insertSystem(s) { var r = await client.from('systems').insert({ workshop_id: ws.id, name: s.name, category: s.category || '', used_by: s.usedBy || '', connector: s.connector || '', status: s.status || 'assumed', note: s.note || '', sort: s.sort || 99, source: sourceFor(s.source), added_by: s.source === 'AI' ? 'Claude' : myName() }); if (r.error) fail(r.error, 'Could not add'); refresh('systems'); }
+  async function insertPhase(p) { var r = await client.from('phases').insert({ workshop_id: ws.id, fn: p.fn || '', name: p.name, what: p.what || '', prompts: p.prompts || [], sort: p.sort || 99, source: sourceFor(p.source), added_by: p.source === 'AI' ? 'Claude' : myName() }); if (r.error) fail(r.error, 'Could not add'); refresh('phases'); }
+  async function updatePhase(uid, p) { var r = await client.from('phases').update({ fn: p.fn || '', name: p.name, what: p.what || '', prompts: p.prompts || [] }).eq('id', uid); if (r.error) fail(r.error, 'Could not save'); refresh('phases'); }
+  async function deletePhase(uid) { var r = await client.from('phases').delete().eq('id', uid); if (r.error) fail(r.error, 'Could not delete'); refresh('phases'); }
   async function updateSystem(uid, s) { var r = await client.from('systems').update({ name: s.name, category: s.category || '', used_by: s.usedBy || '', connector: s.connector || '', status: s.status || 'assumed', note: s.note || '' }).eq('id', uid); if (r.error) fail(r.error, 'Could not save'); }
   async function deleteSystem(uid) { var r = await client.from('systems').delete().eq('id', uid); if (r.error) fail(r.error, 'Could not delete'); refresh('systems'); }
   /* Blank slate for a workshop that was created from a template: drop its
@@ -181,9 +197,10 @@ window.SB = (function () {
      second viewpoint ideas are this workshop's and stay. */
   async function clearPrepared(config) {
     var r1 = await client.from('systems').delete().eq('workshop_id', ws.id); if (r1.error) fail(r1.error, 'Could not clear systems');
+    var r0 = await client.from('phases').delete().eq('workshop_id', ws.id); if (r0.error) fail(r0.error, 'Could not clear phases');
     var r2 = await client.from('second_ideas').delete().eq('workshop_id', ws.id).eq('origin', 'consultant'); if (r2.error) fail(r2.error, 'Could not clear prepared ideas');
     await updateWorkshop({ config: config });
-    refresh('systems'); refresh('second_ideas'); refresh('workshops');
+    refresh('systems'); refresh('phases'); refresh('second_ideas'); refresh('workshops');
   }
   async function updateWorkshop(patch) { var r = await client.from('workshops').update(patch).eq('id', ws.id); if (r.error) fail(r.error, 'Could not save'); }
   async function addTranscript(text, src) { var r = await client.from('transcript_chunks').insert({ workshop_id: ws.id, text: text, src: src || 'manual' }); if (r.error) fail(r.error, 'Transcript not saved'); }
@@ -222,7 +239,8 @@ window.SB = (function () {
   return {
     init: init, on: on, param: param, ls: ls,
     get user() { return user; }, get role() { return role; }, get ws() { return ws; }, get org() { return org; }, get active() { return active; }, get cfg() { return cfg; }, get myDots() { return myDots; },
-    sendLink: sendLink, signOut: signOut, openWorkshop: openWorkshop, joinWithCode: joinWithCode, joinAnonymously: joinAnonymously, isAnon: isAnon, refreshAll: refreshAll,
+    sendLink: sendLink, signOut: signOut, openWorkshop: openWorkshop, joinWithCode: joinWithCode, joinAnonymously: joinAnonymously, isAnon: isAnon, refreshAll: refreshAll, myName: myName, setName: setName,
+    insertPhase: insertPhase, updatePhase: updatePhase, deletePhase: deletePhase,
     insertOpportunity: insertOpportunity, updateOpportunity: updateOpportunity, deleteOpportunity: deleteOpportunity, vote: vote,
     insertSystem: insertSystem, updateSystem: updateSystem, deleteSystem: deleteSystem, updateWorkshop: updateWorkshop, clearPrepared: clearPrepared,
     addTranscript: addTranscript, setAIIdeas: setAIIdeas, api: api,

@@ -27,12 +27,13 @@ window.HELP = (function () {
       start: 'Starts the clock on block 1 and switches to the view that block needs.',
       goto: 'Jump to this block. Starts its timer and opens the right view.',
       toggleask: 'Show or hide the questions to ask during this block.',
-      addsystem: 'Add a system the room uses that is not on the list.',
+      addsystem: 'Add a system the room uses that is not on the list. Anyone in the room can, from their phone too; it shows for everyone with their name on it.',
+      addphase: 'Add a stage of the process. Anyone in the room can; Claude also adds the stages it hears in the transcript.',
       editsystem: 'Change the name, category, who uses it, or what Claude can reach.',
       newop: 'Add an idea by hand. Use this when someone says something Claude missed.',
       edit: 'Open the full form for this idea: tags, pain, what Claude does, owner, notes.',
       validate: 'Mark this idea as confirmed by the room: the pain is real and the direction is right.',
-      vote: 'Add or remove a dot vote. Give each person three dots in block 6.',
+      vote: 'Add or remove a vote. One dot is one vote. The number of votes per person is set in Settings and can be any number.',
       export: 'Download an Excel workbook: the register, the second viewpoint, the systems and the phase heat map.',
       exportjson: 'Download everything as a JSON file, transcript included. A backup.',
       importjson: 'Load a JSON backup. Ideas already on the board are not duplicated.',
@@ -193,7 +194,7 @@ window.HELP = (function () {
      press it while the room watches. Anything not listed defaults by group. */
   var who = {
     view: { runsheet: 'you', systems: 'both', process: 'both', opportunities: 'both', second: 'both', live: 'you', settings: 'you' },
-    action: { validate: 'both', vote: 'both', export: 'both', reveal: 'both', promote: 'both', newidea: 'room', joincode: 'room', sendlink: 'room' },
+    action: { validate: 'both', vote: 'both', export: 'both', reveal: 'both', promote: 'both', newidea: 'room', joincode: 'room', sendlink: 'room', addsystem: 'both', addphase: 'both' },
     id: { opBadge: 'room', secondLock: 'room', nowBlock: 'room', nowTime: 'room', tOps: 'room' },
     mode: { cards: 'both', table: 'you' },
     chip: 'room', phaseCount: 'room', blockMins: 'room', field: 'you'

@@ -194,6 +194,10 @@
     }
   }; }
 
+  /* Facilitators edit anything; a participant edits what they added. */
+  function canEdit(row) { if (MODE.role !== 'participant') return true; return !!(row && row.createdBy && SB.user && row.createdBy === SB.user.id && (row.source || 'Participant') === 'Participant'); }
+  function whoChip(row) { var src = row.source || 'Facilitator'; return src === 'AI' ? chip('chip--src-AI', 'Heard by Claude') : chip('chip--src-' + src, row.addedBy ? 'Added by ' + row.addedBy : (src === 'Participant' ? 'Added by a participant' : 'Facilitator')); }
+  function brandLines() { $('#brandClient').textContent = (CFG.client && CFG.client.name) || 'Ideation Board'; var sub = $('#brandSub'); if (sub) sub.textContent = teamsSentence() + '. AI opportunity workshop.'; }
   function teamsSentence() { var f = (CFG.client && CFG.client.functions) || []; return f.length ? f.join(' and ') + (f.length === 1 ? ' team' : ' teams') : 'the team'; }
   function fnEnum() { return CFG.functionsTags.join('|'); }
   function contextBlock() {
@@ -241,7 +245,7 @@
     (list || []).forEach(function (x) {
       var name = String((x && x.name) || '').trim(); if (!name || have[norm(name)]) return;
       have[norm(name)] = true; added++;
-      var sys = { name: name, category: String(x.category || ''), usedBy: String(x.usedBy || ''), connector: 'Unknown', status: 'assumed', note: String(x.note || ''), sort: 50 + S.systems.length + added };
+      var sys = { name: name, category: String(x.category || ''), usedBy: String(x.usedBy || ''), connector: 'Unknown', status: 'assumed', note: String(x.note || ''), sort: 50 + S.systems.length + added, source: 'AI', addedBy: 'Claude' };
       if (SBA()) SB.insertSystem(sys).catch(function () {});
       else S.systems.push(Object.assign({ id: 's' + uid() }, sys));
     });
@@ -254,9 +258,9 @@
       var name = String((x && x.name) || '').trim(); if (!name || have[norm(name)]) return;
       have[norm(name)] = true; added++;
       var fn = CFG.functionsTags.indexOf(x['function']) >= 0 ? x['function'] : (CFG.functionsTags.indexOf(x.fn) >= 0 ? x.fn : CFG.functionsTags[0]);
-      CFG.phases.push({ id: 'p' + uid(), fn: fn, name: name, what: String(x.what || ''), prompts: [] });
+      var ph = { fn: fn, name: name, what: String(x.what || ''), prompts: [], source: 'AI', addedBy: 'Claude' };
+      if (SBA()) SB.insertPhase(ph).catch(function () {}); else CFG.phases.push(Object.assign({ id: 'p' + uid() }, ph));
     });
-    if (added) savePhases();
     return added;
   }
 
@@ -632,22 +636,22 @@
   }
 
   function vSystems() {
-    var html = head('What you touch', 'Assumed until the room confirms it. The connector column is the seam Claude has to cross.',
-      '<button class="btn fac" data-action="addsystem">Add a system</button>');
+    var html = head('What you touch', 'Assumed until the room confirms it. The connector column is the seam Claude has to cross. Anyone in the room can add one; Claude adds the ones it hears.',
+      '<button class="btn" data-action="addsystem" data-tip="Add a system the team uses. It shows for everyone straight away with your name on it." data-who="both">Add a system</button>');
     if (!S.systems.length) html += '<div class="card empty" data-who="you"><h3>No systems yet</h3><p class="muted">This workshop starts blank. Add the systems this team touches (the ERP, the document store, the mailbox, the spreadsheets) before the day, or build the list live in block 2 while the room corrects you.</p></div>';
     html += '<div class="grid grid--3">';
     S.systems.forEach(function (s) {
-      html += '<div class="card sys" data-sys="' + esc(s.id) + '"><div><div class="sys__name">' + esc(s.name) + '</div><div class="sys__meta">' + chip('chip--st-' + s.status, s.status) + chip('', s.category) + chip('', s.usedBy) + '</div>' +
+      html += '<div class="card sys" data-sys="' + esc(s.id) + '"><div><div class="sys__name">' + esc(s.name) + '</div><div class="sys__meta">' + chip('chip--st-' + s.status, s.status) + chip('', s.category) + chip('', s.usedBy) + whoChip(s) + '</div>' +
         '<div class="sys__note"><b>Claude reach:</b> ' + esc(s.connector) + '<br>' + esc(s.note) + '</div></div>' +
-        '<div class="stack fac"><div class="seg" data-sysstatus="' + esc(s.id) + '">' + ['confirmed', 'assumed', 'unknown'].map(function (st) { return '<button aria-pressed="' + (s.status === st) + '" data-st="' + st + '">' + st[0].toUpperCase() + '</button>'; }).join('') + '</div><button class="btn btn--sm btn--ghost" data-action="editsystem" data-id="' + esc(s.id) + '">Edit</button></div></div>';
+        '<div class="stack"><div class="seg fac" data-sysstatus="' + esc(s.id) + '">' + ['confirmed', 'assumed', 'unknown'].map(function (st) { return '<button aria-pressed="' + (s.status === st) + '" data-st="' + st + '">' + st[0].toUpperCase() + '</button>'; }).join('') + '</div>' + (canEdit(s) ? '<button class="btn btn--sm btn--ghost" data-action="editsystem" data-id="' + esc(s.id) + '">Edit or delete</button>' : '') + '</div></div>';
     });
     html += '</div>';
     return html;
   }
 
   function vProcess() {
-    var html = head('Process walk', 'Phase by phase. The number is how many opportunities have landed on that phase: the heat map builds itself.',
-      '<button class="btn fac" data-action="addphase">Add a phase</button>');
+    var html = head('Process walk', 'Phase by phase. The number is how many opportunities have landed on that phase: the heat map builds itself. Anyone in the room can add a phase; Claude adds the stages it hears.',
+      '<button class="btn" data-action="addphase" data-tip="Add a stage of your process. It shows for everyone straight away with your name on it." data-who="both">Add a phase</button>');
     if (!CFG.phases.length) html += '<div class="card empty" data-who="you"><h3>No phases yet</h3><p class="muted">This workshop starts blank. Add the process phases for each team (for example "Accounts payable", "Month-end close", "Purchase orders") before the day. Ideas Claude hears before then are listed below under "Not yet placed" and can be moved onto a phase later.</p></div>';
     var groups = CFG.functionsTags.slice(); CFG.phases.forEach(function (p) { if (groups.indexOf(p.fn) < 0) groups.push(p.fn); });
     groups.forEach(function (fn) {
@@ -655,10 +659,10 @@
       html += '<h2 style="margin:var(--sc-6) 0 var(--sc-3)">' + esc(fn === 'Both' ? 'Cross-cutting' : fn) + '</h2><div class="grid grid--2">';
       ps.forEach(function (p) {
         var ops = opCountFor(p.name);
-        html += '<div class="card phase" data-phase="' + esc(p.id) + '"><div><h3>' + esc(p.name) + '</h3><p class="phase__what">' + esc(p.what || '') + '</p>' +
+        html += '<div class="card phase" data-phase="' + esc(p.id) + '"><div><h3>' + esc(p.name) + '</h3><div class="sys__meta">' + whoChip(p) + '</div><p class="phase__what">' + esc(p.what || '') + '</p>' +
           '<ul class="phase__prompts fac">' + (p.prompts || []).map(function (q) { return '<li>' + esc(q) + '</li>'; }).join('') + '</ul>' +
           (ops.length ? '<div class="phase__ops">' + ops.map(function (o) { return chip('chip--fn-' + o.fn, o.id + ' ' + o.title); }).join('') + '</div>' : '') +
-          '<div class="row fac" style="margin-top:10px"><button class="btn btn--sm" data-action="newop" data-phase="' + esc(p.name) + '" data-fn="' + esc(p.fn) + '">Add opportunity here</button><button class="btn btn--sm btn--ghost" data-action="editphase" data-id="' + esc(p.id) + '">Edit phase</button></div></div>' +
+          '<div class="row" style="margin-top:10px"><button class="btn btn--sm fac" data-action="newop" data-phase="' + esc(p.name) + '" data-fn="' + esc(p.fn) + '">Add opportunity here</button>' + (canEdit(p) ? '<button class="btn btn--sm btn--ghost" data-action="editphase" data-id="' + esc(p.id) + '">Edit or delete</button>' : '') + '</div></div>' +
           '<div class="phase__count' + (ops.length ? '' : ' zero') + '">' + ops.length + '</div></div>';
       });
       html += '</div>';
@@ -671,7 +675,7 @@
       Object.keys(byPhase).forEach(function (k) {
         var ops = byPhase[k];
         html += '<div class="card phase"><div><h3>' + esc(k) + '</h3><div class="phase__ops">' + ops.map(function (o) { return chip('chip--fn-' + o.fn, o.id + ' ' + o.title); }).join('') + '</div>' +
-          (k !== 'No phase' ? '<div class="row fac" style="margin-top:10px"><button class="btn btn--sm" data-action="adoptphase" data-name="' + esc(k) + '" data-fn="' + esc(ops[0].fn) + '">Make this a phase</button></div>' : '') + '</div>' +
+          (k !== 'No phase' ? '<div class="row" style="margin-top:10px"><button class="btn btn--sm" data-action="adoptphase" data-name="' + esc(k) + '" data-fn="' + esc(ops[0].fn) + '">Make this a phase</button></div>' : '') + '</div>' +
           '<div class="phase__count">' + ops.length + '</div></div>';
       });
       html += '</div>';
@@ -692,7 +696,7 @@
     var ops = filteredOps();
     var html = head('Opportunities', 'Everything heard, tagged and editable. Click a title to rename it. Votes sort the list.',
       '<div class="seg part-hide" id="opsMode"><button aria-pressed="' + (UI.opsMode === 'cards') + '" data-m="cards">Cards</button><button aria-pressed="' + (UI.opsMode === 'table') + '" data-m="table">Table</button></div>' +
-      (MODE.role === 'participant' ? '<span class="chip chip--dots" id="dotsLeft" data-tip="Dot votes you still have to spend. Press plus on an idea to spend one, minus to take it back." data-who="room">' + dotsLeft() + ' of ' + maxDots() + ' dots left</span><button class="btn btn--primary" data-action="newidea" data-tip="Add an idea of your own. It lands on the board for everyone with your name on it." data-who="room">Add an idea</button>' : '') +
+      (MODE.role === 'participant' ? '<span class="chip chip--dots" id="dotsLeft" data-tip="Votes you still have to spend. One dot is one vote. Press plus on an idea to spend one, minus to take it back." data-who="room">' + dotsLeft() + ' of ' + maxDots() + ' votes left</span><button class="btn btn--primary" data-action="newidea" data-tip="Add an idea of your own. It lands on the board for everyone with your name on it." data-who="room">Add an idea</button>' : '') +
       '<button class="btn fac" data-action="newop">Add</button><button class="btn part-hide' + (MODE.role === 'participant' ? '' : ' btn--primary') + '" data-action="export">Export Excel</button>' +
       '<button class="btn btn--ghost btn--sm fac" data-action="exportjson">JSON</button><button class="btn btn--ghost btn--sm fac" data-action="importjson">Import</button>');
     html += '<div class="toolbar"><div class="seg" id="fnFilter">' + ['All'].concat(CFG.functionsTags).map(function (f) { return '<button aria-pressed="' + (UI.filter.fn === f) + '" data-f="' + f + '">' + f + '</button>'; }).join('') + '</div>' +
@@ -714,18 +718,19 @@
       (o.direction ? '<p class="op__dir"><b>' + esc(o.surface) + ':</b> ' + esc(o.direction) + '</p>' : '') +
       (o.quote ? '<p class="op__quote">“' + esc(o.quote) + '” ' + (o.raisedBy ? '· ' + esc(o.raisedBy) : '') + '</p>' : '') +
       '</div><div class="op__side">' + voteBox(o) +
-      '<div class="row fac"><button class="btn btn--sm btn--ghost" data-action="edit" data-id="' + o.id + '">Edit</button>' + (o.status === 'Validated' ? '' : '<button class="btn btn--sm btn--ghost" data-action="validate" data-id="' + o.id + '">Validate</button>') + '</div></div></div>';
+      '<div class="row fac"><button class="btn btn--sm btn--ghost" data-action="edit" data-id="' + o.id + '">Edit</button>' + (o.status === 'Validated' ? '' : '<button class="btn btn--sm btn--ghost" data-action="validate" data-id="' + o.id + '">Validate</button>') + '</div>' +
+      (MODE.role === 'participant' && canEdit(o) ? '<div class="row"><button class="btn btn--sm btn--ghost" data-action="editidea" data-id="' + o.id + '">Edit or delete</button></div>' : '') + '</div></div>';
   }
   function maxDots() { return (SBA() && SB.ws && SB.ws.max_dots) || 3; }
   function dotsLeft() { var used = 0; S.opportunities.forEach(function (o) { used += o.myDots || 0; }); return Math.max(0, maxDots() - used); }
   function voteBox(o) {
     if (MODE.role === 'participant') {
       var mine = o.myDots || 0;
-      return '<div class="vote"><button data-action="vote" data-id="' + o.id + '" data-d="-1" aria-label="Take a dot back"' + (mine ? '' : ' disabled') + '>−</button><span class="vote__n" data-tip="' + o.votes + ' dot' + (o.votes === 1 ? '' : 's') + ' from the room, ' + mine + ' of them yours." data-who="room">' + o.votes + '</span><button data-action="vote" data-id="' + o.id + '" data-d="1" aria-label="Add a dot"' + (dotsLeft() ? '' : ' disabled') + '>+</button></div>' + (mine ? '<span class="small muted">you: ' + mine + '</span>' : '');
+      return '<div class="vote"><button data-action="vote" data-id="' + o.id + '" data-d="-1" aria-label="Take a vote back"' + (mine ? '' : ' disabled') + '>−</button><span class="vote__n" data-tip="' + o.votes + ' vote' + (o.votes === 1 ? '' : 's') + ' from the room, ' + mine + ' of them yours. One dot is one vote." data-who="room">' + o.votes + '</span><button data-action="vote" data-id="' + o.id + '" data-d="1" aria-label="Add a vote"' + (dotsLeft() ? '' : ' disabled') + '>+</button></div>' + (mine ? '<span class="small muted">your votes: ' + mine + '</span>' : '');
     }
     if (MODE.role === 'facilitator') {
       var who = (o.voters && o.voters.length) ? 'Voted: ' + o.voters.join(', ') : 'No votes yet';
-      return '<div class="vote"><span class="vote__n vote__n--big" data-tip="' + esc(who) + '" data-who="room">' + o.votes + '</span><span class="small muted">dots</span></div>';
+      return '<div class="vote"><span class="vote__n vote__n--big" data-tip="' + esc(who) + '" data-who="room">' + o.votes + '</span><span class="small muted">votes</span></div>';
     }
     return '<div class="vote"><button data-action="vote" data-id="' + o.id + '" data-d="-1" aria-label="Remove a vote">−</button><span class="vote__n">' + o.votes + '</span><button data-action="vote" data-id="' + o.id + '" data-d="1" aria-label="Add a vote">+</button></div>';
   }
@@ -841,12 +846,13 @@
     SHEET.kind = kind; SHEET.id = id;
     var body = $('#sheetBody'), title = $('#sheetTitle');
     if (kind === 'idea') {
-      title.textContent = 'Add an idea';
-      body.innerHTML = '<label class="field">What is the task or the pain? One line.<input id="f_title" placeholder="Chasing invoice approvals every week"></label>' +
-        '<label class="field">Whose is it?<select id="f_fn">' + CFG.functionsTags.map(function (x) { return '<option>' + esc(x) + '</option>'; }).join('') + '</select></label>' +
-        '<label class="field">Tell us a bit more (optional)<textarea id="f_pain" placeholder="How often, how long, what goes wrong"></textarea></label>' +
-        '<label class="field">What would you want Claude to do? (optional)<textarea id="f_direction"></textarea></label>';
-      $('#sheetDelete').hidden = true;
+      var io = id ? findOp(id) : { title: '', fn: CFG.functionsTags[0], pain: '', direction: '' }; if (!io) return;
+      title.textContent = id ? 'Edit your idea' : 'Add an idea';
+      body.innerHTML = '<label class="field">What is the task or the pain? One line.<input id="f_title" value="' + esc(io.title) + '" placeholder="Chasing invoice approvals every week"></label>' +
+        '<label class="field">Whose is it?<select id="f_fn">' + CFG.functionsTags.map(function (x) { return '<option' + (x === io.fn ? ' selected' : '') + '>' + esc(x) + '</option>'; }).join('') + '</select></label>' +
+        '<label class="field">Tell us a bit more (optional)<textarea id="f_pain" placeholder="How often, how long, what goes wrong">' + esc(io.pain) + '</textarea></label>' +
+        '<label class="field">What would you want Claude to do? (optional)<textarea id="f_direction">' + esc(io.direction) + '</textarea></label>';
+      $('#sheetDelete').hidden = !id;
     } else if (kind === 'phase') {
       var ph = id ? CFG.phases.filter(function (x) { return x.id === id; })[0] : { id: '', fn: CFG.functionsTags[0], name: '', what: '', prompts: [] };
       if (!ph) return;
@@ -875,7 +881,8 @@
       $('#sheetDelete').hidden = !id;
     } else {
       var s = id ? S.systems.filter(function (x) { return x.id === id; })[0] : { id: '', name: '', category: '', usedBy: '', connector: '', status: 'assumed', note: '' };
-      title.textContent = id ? 'Edit system' : 'New system';
+      if (!s) return;
+      title.textContent = id ? 'Edit system' : 'Add a system';
       body.innerHTML = '<label class="field">Name<input id="f_name" value="' + esc(s.name) + '"></label><div class="field-row"><label class="field">Category<input id="f_category" value="' + esc(s.category) + '"></label><label class="field">Used by<input id="f_usedBy" value="' + esc(s.usedBy) + '"></label></div>' +
         '<label class="field">Claude reach (connector)<input id="f_connector" value="' + esc(s.connector) + '"></label><label class="field">Note<textarea id="f_note">' + esc(s.note) + '</textarea></label>';
       $('#sheetDelete').hidden = !id;
@@ -888,7 +895,8 @@
     var v = function (id) { var el = $('#' + id); return el ? el.value.trim() : ''; };
     if (SHEET.kind === 'idea') {
       if (!v('f_title')) { toast('Give it a title'); return; }
-      var name = (SB.user && (SB.user.user_metadata && SB.user.user_metadata.display_name)) || (SB.user && SB.user.email && SB.user.email.split('@')[0]) || 'Participant';
+      if (SHEET.id) { var mine = findOp(SHEET.id); if (mine) { Object.assign(mine, { title: v('f_title'), fn: v('f_fn'), pain: v('f_pain'), direction: v('f_direction') }); pushOp(mine, ['title', 'fn', 'pain', 'direction']); } closeSheet(); render(); toast('Saved'); return; }
+      var name = (window.SB && SB.myName && SB.myName()) || (SB.user && SB.user.email && SB.user.email.split('@')[0]) || 'Participant';
       addOpportunity({ title: v('f_title'), function: v('f_fn'), pain: v('f_pain'), direction: v('f_direction'), raisedBy: name, phase: '', surface: 'Claude Chat', build: 'Skill', confidence: 'Medium' }, 'Participant');
       closeSheet(); toast('On the board'); return;
     }
@@ -903,9 +911,9 @@
     } else if (SHEET.kind === 'phase') {
       var pd = { name: v('f_name'), fn: v('f_fn'), what: v('f_what'), prompts: v('f_prompts').split('\n').map(function (x) { return x.trim(); }).filter(Boolean) };
       if (!pd.name) { toast('A name is needed'); return; }
-      if (SHEET.id) { var cur = CFG.phases.filter(function (x) { return x.id === SHEET.id; })[0]; if (cur) { var oldName = cur.name; Object.assign(cur, pd); if (oldName !== pd.name) S.opportunities.forEach(function (o) { if (o.phase === oldName) { o.phase = pd.name; pushOp(o, ['phase']); } }); } }
+      if (SHEET.id) { var cur = CFG.phases.filter(function (x) { return x.id === SHEET.id; })[0]; if (cur) { var oldName = cur.name; Object.assign(cur, pd); if (oldName !== pd.name) S.opportunities.forEach(function (o) { if (o.phase === oldName) { o.phase = pd.name; pushOp(o, ['phase']); } }); if (SBA() && cur.uid) SB.updatePhase(cur.uid, pd).catch(function () {}); } }
+      else if (SBA()) SB.insertPhase(pd).catch(function () {});
       else CFG.phases.push(Object.assign({ id: 'p' + uid() }, pd));
-      savePhases();
     } else {
       var sd = { name: v('f_name'), category: v('f_category'), usedBy: v('f_usedBy'), connector: v('f_connector'), note: v('f_note') };
       if (!sd.name) { toast('A name is needed'); return; }
@@ -916,7 +924,8 @@
     save(); closeSheet(); render(); updateBadge();
   }
   function deleteSheet() {
-    if (SHEET.kind === 'phase') { if (!confirm('Remove this phase? Ideas on it keep their phase name and show under "Not yet placed".')) return; CFG.phases = CFG.phases.filter(function (x) { return x.id !== SHEET.id; }); savePhases(); }
+    if (SHEET.kind === 'phase') { if (!confirm('Remove this phase? Ideas on it keep their phase name and show under "Not yet placed".')) return; var dph = CFG.phases.filter(function (x) { return x.id === SHEET.id; })[0]; if (dph && SBA() && dph.uid) SB.deletePhase(dph.uid).catch(function () {}); CFG.phases = CFG.phases.filter(function (x) { return x.id !== SHEET.id; }); }
+    else if (SHEET.kind === 'idea') { if (!confirm('Delete your idea? It leaves the board for everyone.')) return; var dmine = findOp(SHEET.id); if (dmine && SBA() && dmine.uid) SB.deleteOpportunity(dmine.uid).catch(function () {}); S.opportunities = S.opportunities.filter(function (o) { return o.id !== SHEET.id; }); }
     else if (SHEET.kind === 'op') { if (!confirm('Delete ' + SHEET.id + '? Consider Parked instead; deleted ideas leave no trace.')) return; var dop = findOp(SHEET.id); if (dop && SBA() && dop.uid) SB.deleteOpportunity(dop.uid).catch(function () {}); S.opportunities = S.opportunities.filter(function (o) { return o.id !== SHEET.id; }); }
     else { var dsys = S.systems.filter(function (x) { return x.id === SHEET.id; })[0]; if (dsys && SBA() && dsys.uid) SB.deleteSystem(dsys.uid).catch(function () {}); S.systems = S.systems.filter(function (s) { return s.id !== SHEET.id; }); }
     save(); closeSheet(); render(); updateBadge();
@@ -947,7 +956,7 @@
     ws5['!cols'] = [{ wch: 18 }, { wch: 100 }];
     XLSX.utils.book_append_sheet(wb, ws5, 'Read Me');
     var out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-    var name = 'WoS-AI-opportunities-' + new Date().toISOString().slice(0, 10) + '.xlsx';
+    var name = fileStem() + '-AI-opportunities-' + new Date().toISOString().slice(0, 10) + '.xlsx';
     deliverFile(name, new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
   }
   function exportCsv() {
@@ -955,14 +964,15 @@
     var q = function (v) { v = Array.isArray(v) ? v.join('; ') : String(v == null ? '' : v); return '"' + v.replace(/"/g, '""') + '"'; };
     var lines = [cols.join(',')].concat(S.opportunities.map(function (o) { return cols.map(function (c) { return q(o[c]); }).join(','); }));
     toast('Spreadsheet library missing, exporting CSV instead');
-    deliverFile('WoS-AI-opportunities-' + new Date().toISOString().slice(0, 10) + '.csv', new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv' }));
+    deliverFile(fileStem() + '-AI-opportunities-' + new Date().toISOString().slice(0, 10) + '.csv', new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv' }));
   }
   function deliverFile(name, blob) {
     if (CAP.downloads) { CAP.downloads.save({ filename: name, data: blob }).then(function () { toast('Saved ' + name); }).catch(function (e) { if (e && e.code !== 'declined') { log('download: ' + e.code); anchorDownload(name, blob); } }); return; }
     anchorDownload(name, blob);
   }
   function anchorDownload(name, blob) { var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 2000); toast('Exported ' + name); }
-  function exportJson() { deliverFile('WoS-board-' + new Date().toISOString().slice(0, 10) + '.json', new Blob([JSON.stringify({ opportunities: S.opportunities, systems: S.systems, secondAI: S.secondAI, transcript: S.transcript }, null, 2)], { type: 'application/json' })); }
+  function fileStem() { return String((CFG.client && (CFG.client.short || CFG.client.name)) || 'board').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30) || 'board'; }
+  function exportJson() { deliverFile(fileStem() + '-board-' + new Date().toISOString().slice(0, 10) + '.json', new Blob([JSON.stringify({ opportunities: S.opportunities, systems: S.systems, secondAI: S.secondAI, transcript: S.transcript }, null, 2)], { type: 'application/json' })); }
   function importJson() {
     var inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'application/json';
     inp.onchange = function () { var f = inp.files[0]; if (!f) return; f.text().then(function (t) { var j = JSON.parse(t); var n = 0; (j.opportunities || []).forEach(function (o) { if (addOpportunity(Object.assign({}, o, { function: o.fn || o.function }), o.source || 'Room')) n++; }); if (j.systems) S.systems = j.systems; save(); render(); toast('Imported ' + n + ' opportunities'); }).catch(function () { toast('That file did not parse'); }); };
@@ -1050,7 +1060,10 @@
       case 'copylinkfor': copyText(joinLinkFor(b.dataset.slug, b.dataset.code)); break;
       case 'addphase': openSheet('phase', null); break;
       case 'editphase': openSheet('phase', b.dataset.id); break;
-      case 'adoptphase': CFG.phases.push({ id: 'p' + uid(), fn: CFG.functionsTags.indexOf(b.dataset.fn) >= 0 ? b.dataset.fn : CFG.functionsTags[0], name: b.dataset.name, what: '', prompts: [] }); savePhases(); render(); toast('Phase added'); break;
+      case 'adoptphase': var np = { fn: CFG.functionsTags.indexOf(b.dataset.fn) >= 0 ? b.dataset.fn : CFG.functionsTags[0], name: b.dataset.name, what: '', prompts: [] }; if (SBA()) SB.insertPhase(np).catch(function () {}); else { CFG.phases.push(Object.assign({ id: 'p' + uid() }, np)); render(); } toast('Phase added'); break;
+      case 'editidea': openSheet('idea', b.dataset.id); break;
+      case 'savename': var nm = (($('#a_name') || {}).value || '').trim(); if (!nm) { toast('Type your name first'); return; } SB.setName(nm).then(function () { enterWorkshop({ ok: true }); }).catch(function () {}); break;
+      case 'savedots': var nd = parseInt(($('#setDots') || {}).value, 10); if (!(nd >= 1)) { toast('Votes per person must be 1 or more'); return; } SB.updateWorkshop({ max_dots: nd }).then(function () { toast('Everyone now has ' + nd + ' vote' + (nd === 1 ? '' : 's')); }).catch(function () {}); break;
       case 'startblank': startBlank(); break;
       case 'bigqr': showBigQr(); break;
       case 'closeqr': hideBigQr(); break;
@@ -1097,17 +1110,10 @@
      opens it types a name and is in. It is shown and copied wherever the
      code is already visible, so it exposes nothing the room cannot see. */
   function joinLinkFor(slug, code) { return location.origin + location.pathname + '?w=' + encodeURIComponent(slug || '') + '&code=' + encodeURIComponent(code || ''); }
-  /* Persist the phases of the open workshop. In server mode they live in the
-     workshop's config column; locally they stay in memory for this session. */
-  function savePhases() {
-    if (!SBA()) { save(); return; }
-    var c = Object.assign({}, SB.ws.config || {}); c.phases = CFG.phases;
-    SB.updateWorkshop({ config: c }).catch(function () {});
-  }
   function startBlank() {
     if (!SBA() || SB.role !== 'facilitator') return;
     if (!confirm('Start this workshop blank? Removes every system, every process phase and every prepared second viewpoint idea from this workshop. Opportunities, votes and the transcript stay. This cannot be undone.')) return;
-    var c = Object.assign({}, SB.ws.config || {}); c.phases = []; c.systems = []; c.blindSpots = [];
+    var c = Object.assign({}, SB.ws.config || {}); delete c.phases; c.systems = []; c.blindSpots = [];
     SB.clearPrepared(c).then(function () { CFG.phases = []; CFG.blindSpots = []; S.systems = []; toast('Blank slate. Add systems and phases before the day.'); render(); }).catch(function () {});
   }
   /* The QR carries the join code too, so a scan lands straight on the name
@@ -1135,15 +1141,18 @@
   function applyData(p) {
     if (p.workshop) {
       var w = p.workshop;
+      var keepPhases = CFG.phases, keepBlind = CFG.blindSpots;
       CFG = Object.assign({}, SEED, BLANK, w.config || {});
-      if (!Array.isArray(CFG.phases)) CFG.phases = [];
-      if (!CFG.blindSpots || p.second) CFG.blindSpots = CFG.blindSpots || [];
-      $('#brandClient').textContent = (CFG.client && CFG.client.name) || w.title;
+      CFG.phases = p.phases ? [] : (keepPhases || []);
+      CFG.blindSpots = p.second ? [] : (keepBlind || []);
+      if (!CFG.client || !CFG.client.name) CFG.client = Object.assign({}, SEED.client, { name: w.title });
+      brandLines();
       S.agendaIdx = typeof w.current_block === 'number' ? w.current_block : -1;
       S.timer = { running: !!w.timer_running, startedAt: w.block_started_at ? Date.parse(w.block_started_at) : now(), elapsedBefore: Number(w.timer_elapsed_ms || 0) };
       S.revealed = !!w.revealed; S.consumedChars = w.consumed_chars || 0;
     }
-    if (p.systems) S.systems = p.systems.map(function (r) { return { id: r.id, uid: r.id, name: r.name, category: r.category || '', usedBy: r.used_by || '', connector: r.connector || '', status: r.status, note: r.note || '' }; });
+    if (p.systems) S.systems = p.systems.map(function (r) { return { id: r.id, uid: r.id, name: r.name, category: r.category || '', usedBy: r.used_by || '', connector: r.connector || '', status: r.status, note: r.note || '', source: r.source || 'Facilitator', addedBy: r.added_by || '', createdBy: r.created_by || null }; });
+    if (p.phases) CFG.phases = p.phases.map(function (r) { return { id: r.id, uid: r.id, fn: r.fn || '', name: r.name, what: r.what || '', prompts: r.prompts || [], source: r.source || 'Facilitator', addedBy: r.added_by || '', createdBy: r.created_by || null }; });
     if (p.opportunities) S.opportunities = p.opportunities;
     if (p.second) {
       var toIdea = function (r, n) { return { id: r.key || ('A' + (n + 1)), title: r.title, fn: r.fn, phase: r.phase, surface: r.surface, build: r.build, what: r.what, why: r.why, lift: r.lift, comparator: r.comparator, confidence: r.confidence, fromAI: r.origin === 'ai' }; };
@@ -1163,6 +1172,7 @@
     if (kind === 'loading') html += '<h2>Opening the workshop…</h2>';
     else if (kind === 'sent') html += '<h2>Check your email</h2><p class="muted">We sent a sign-in link to <b>' + esc(extra) + '</b>. Open it on this device and you land straight in the room. It can take a minute to arrive.</p>';
     else if (kind === 'join') html += '<h2>Enter the join code</h2><p class="muted">The facilitator has it on the screen.</p><label class="field">Your name<input id="a_name" value="' + esc(j.name || '') + '"></label><label class="field">Join code<input id="a_code" value="' + esc(code) + '" autocapitalize="characters"></label><div class="row"><button class="btn btn--primary" data-action="joincode">Join</button><button class="btn btn--ghost" data-action="signout">Sign out</button></div>';
+    else if (kind === 'name') html += '<h2>What is your name?</h2><p class="muted">It goes next to your votes and ideas so the room knows who said what.</p><label class="field">Your name<input id="a_name" value="' + esc(j.name || '') + '" placeholder="Priya" autocomplete="given-name"></label><div class="row"><button class="btn btn--primary" data-action="savename">Continue</button></div>';
     else if (kind === 'rescan') html += '<h2>Scan the code on the screen</h2><p class="muted">This phone joined as a participant, but no workshop is in the link. Point your camera at the square on the facilitator’s screen to get back in.</p><div class="row"><button class="btn btn--ghost" data-action="signout">Start over</button></div>';
     else if (kind === 'login' && slug && extra !== 'email') html += '<h2>Join the workshop</h2><p class="muted">Your name is all we need. It goes next to your ideas and votes.</p>' +
       '<label class="field">Your name<input id="a_name" value="' + esc(j.name || '') + '" placeholder="Priya" autocomplete="given-name"></label>' +
@@ -1176,7 +1186,7 @@
       '<div class="row"><button class="btn btn--primary" data-action="sendlink">Email me a link</button></div><p class="small muted" id="a_msg"></p>';
     html += '</div>';
     $('#view').innerHTML = html;
-    var f = $('#a_email') || (kind === 'login' && slug ? $('#a_name') : null) || $('#a_code'); if (f) f.focus();
+    var f = $('#a_email') || ((kind === 'login' && slug) || kind === 'name' ? $('#a_name') : null) || $('#a_code'); if (f) f.focus();
   }
   function authSendLink() {
     var email = ($('#a_email') || {}).value || '', name = ($('#a_name') || {}).value || '', code = ($('#a_code') || {}).value || '';
@@ -1189,7 +1199,7 @@
     var code = ($('#a_code') || {}).value || '', name = ($('#a_name') || {}).value || '', slug = SB.param('w');
     code = code.trim(); name = name.trim();
     if (!code) { toast('Enter the code'); return; }
-    if (!SB.user && !name) { toast('Type your name first'); return; }
+    if (!name) { toast('Type your name first'); return; }
     authScreen('loading');
     var p = SB.user ? SB.joinWithCode(slug, code, name) : SB.joinAnonymously(slug, code, name);
     p.then(enterWorkshop).catch(function (e) {
@@ -1200,6 +1210,9 @@
   }
   function enterWorkshop(r) {
     if (r && r.error) { if (r.error === 'join') { authScreen('join', SB.param('w')); return; } toast(r.error); authScreen('join', SB.param('w')); return; }
+    /* Every vote, idea, system and phase carries a name. Nobody gets in
+       without one, on a phone or a laptop, even with an old session. */
+    if (!SB.myName()) { authScreen('name', SB.param('w')); return; }
     document.body.classList.remove('auth');
     MODE.sb = true; MODE.role = SB.role;
     document.body.classList.toggle('participant', SB.role === 'participant');
@@ -1224,7 +1237,7 @@
       h += '<div class="card stack"><h3>This workshop: ' + esc(w.title) + '</h3>' +
         '<div class="kv"><span class="k">Join link</span><span><code>' + esc(joinLink()) + '</code> <button class="btn btn--sm" data-action="copylink" data-tip="The QR code as a link: send it by email or Teams to anyone joining from their desk. They open it, type a name and are in. Same code as on the screen.">Copy</button></span>' +
         '<span class="k">Join code</span><span><b>' + esc(w.join_code) + '</b> <span class="small muted">(inside the link; needed only if someone opens the bare site address)</span></span>' +
-        '<span class="k">Dots per person</span><span>' + w.max_dots + '</span>' +
+        '<span class="k">Votes per person</span><span><input id="setDots" type="number" min="1" value="' + esc(w.max_dots) + '" style="width:5em"> <button class="btn btn--sm" data-action="savedots" data-tip="How many votes each person gets. One dot is one vote. Any number; it applies to everyone as soon as you save.">Save</button></span>' +
         '<span class="k">Bridge token</span><span><code id="bridgeToken">hidden</code> <button class="btn btn--sm btn--ghost" data-action="showtoken" data-tip="Reveals the secret a Claude Code or Cowork session uses to post transcript and ideas into this workshop through /api/ingest. See docs/WISPR-BRIDGE.md.">Show</button> <button class="btn btn--sm btn--ghost" data-action="copytoken">Copy</button></span>' +
         '<span class="k">Workshop id</span><span><code>' + esc(w.id) + '</code></span>' +
         '<span class="k">Prepared content</span><span>' + S.systems.length + ' systems, ' + CFG.phases.length + ' phases, ' + CFG.blindSpots.length + ' prepared second viewpoint ideas <button class="btn btn--sm btn--ghost" data-action="startblank" data-tip="Wipes the systems, phases and prepared second viewpoint ideas from this workshop so it carries nothing from a template or another client. Opportunities, votes and transcript stay.">Start blank</button></span></div>' +
@@ -1232,9 +1245,9 @@
     }
     h += '<div class="card stack" id="adminCard"><h3>Workshops</h3><div id="wsList" class="small muted">Loading…</div>' +
       '<details><summary style="cursor:pointer;font-weight:700">New workshop</summary><div class="stack" style="margin-top:10px">' +
-      '<div class="field-row"><label class="field">Organisation<select id="n_org"><option value="">New organisation…</option></select></label><label class="field">New organisation name<input id="n_orgname" placeholder="Watches of Switzerland"></label></div>' +
-      '<div class="field-row"><label class="field">Workshop title<input id="n_title" placeholder="Finance and Purchasing ideation"></label><label class="field">Client name shown on the board<input id="n_client" placeholder="Watches of Switzerland"></label></div>' +
-      '<div class="field-row"><label class="field">Teams in the room (comma separated)<input id="n_fns" value="Finance, Purchasing"></label><label class="field">Join code<input id="n_code" value="' + esc(String(Math.floor(1000 + Math.random() * 9000))) + '"></label><label class="field">Dots per person<input id="n_dots" type="number" value="3" min="1" max="10"></label></div>' +
+      '<div class="field-row"><label class="field">Organisation<select id="n_org"><option value="">New organisation…</option></select></label><label class="field">New organisation name<input id="n_orgname" placeholder="Client name"></label></div>' +
+      '<div class="field-row"><label class="field">Workshop title<input id="n_title" placeholder="Operations ideation workshop"></label><label class="field">Business name shown on the board<input id="n_client" placeholder="The client\'s business name"></label></div>' +
+      '<div class="field-row"><label class="field">Teams in the room (comma separated)<input id="n_fns" placeholder="Finance, Purchasing"></label><label class="field">Join code<input id="n_code" value="' + esc(String(Math.floor(1000 + Math.random() * 9000))) + '"></label><label class="field">Votes per person (one dot is one vote)<input id="n_dots" type="number" value="3" min="1"></label></div>' +
       '<label class="field">About the client (one line for Claude: industry, size, anything that frames the ideas)<input id="n_about" placeholder="Luxury watch and jewellery retailer, UK listed, 8 people in the room"></label>' +
       '<label class="field">North star<input id="n_north" value="' + esc(SEED.client.northStar) + '"></label><label class="field">Scope test<input id="n_scope" value="' + esc(SEED.client.scopeCriterion) + '"></label>' +
       '<p class="small muted">A new workshop is a blank slate: no systems, no process phases, no prepared second viewpoint ideas. Add systems and phases in the board before the day. The run sheet gets one process walk block per team. When it is created you land on the Run sheet with the QR code and the join link for this workshop.</p>' +
@@ -1301,7 +1314,7 @@
   /* --------------------------------------------------------------- boot -- */
   load();
   applyTheme();
-  $('#brandClient').textContent = CFG.client.name;
+  brandLines();
   bind();
   RUN.lastCount = S.opportunities.length;
   updateBadge(false);

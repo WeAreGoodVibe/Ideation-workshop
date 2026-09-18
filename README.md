@@ -7,9 +7,9 @@ A facilitation board for a 90-minute AI opportunity workshop with the Finance an
 | View | Who sees it | What it is for |
 |---|---|---|
 | Run sheet | Facilitator | Eight timed blocks, the script for each, the questions to ask, a question bank. Timer and block name show in the top bar for the room. |
-| Systems | Room | The tech stack, assumed until confirmed. Each system shows what Claude can reach today. Starts empty for a new workshop; add them before the day, or let Claude add the ones the room names in the transcript. |
-| Process walk | Room | Each team's process phases as cards. The number on each card is how many opportunities landed there. The heat map builds itself. Starts empty; add phases by hand or let Claude add the stages the room walks through. |
-| Opportunities | Room | Every idea, tagged by function (Finance, Purchasing, Both, Org-wide), phase, Claude surface, build type, status. Cards or table. Inline editing. Votes. Excel export. |
+| Systems | Room | The tech stack, assumed until confirmed. Each system shows what Claude can reach today and who added it. Starts empty for a new workshop; the facilitator or any participant adds them (participants can edit and delete their own), and Claude adds the ones the room names in the transcript. |
+| Process walk | Room | Each team's process phases as cards. The number on each card is how many opportunities landed there. The heat map builds itself. Starts empty; anyone in the room adds phases, and Claude adds the stages the room walks through. |
+| Opportunities | Room | Every idea, tagged by team, phase, Claude surface, build type, status. Cards or table. Inline editing. Votes (one dot is one vote; the facilitator sets how many each person gets). Participants add ideas and can edit or delete their own. Excel export. |
 | Second viewpoint | Room, after reveal | Sealed until block 7. What Claude writes from today's transcript: the opportunities this room did not raise, each with why. Only this workshop's transcript and board are used; nothing is carried in from another workshop. |
 | Live capture | Facilitator | Transcript sources, the AI read loop, the log. Hidden in presentation mode. |
 | Settings | Facilitator | API key, model, poll rate, Wispr Flow meeting, feed URL, theme. |
@@ -62,6 +62,17 @@ docs/               workshop plan and the Wispr Flow bridge prompt
 ```
 
 `data/seed.js` is the local-mode demo (the Watches of Switzerland example) and the shared vocabulary (Claude surfaces, build types, statuses, the question bank). A workshop created on the backend does not copy its systems, phases, blind spots or demo transcript: every new workshop is a blank slate with a run sheet built from the teams you name. Systems and phases are added in the board, by hand or by Claude from the transcript.
+
+## Who can do what
+
+| | Facilitator | Participant | Claude (from the transcript) |
+|---|---|---|---|
+| Systems | add, edit, delete any | add; edit and delete their own | adds, tagged "Heard by Claude", status assumed |
+| Phases | add, edit, delete any | add; edit and delete their own | adds, tagged "Heard by Claude" |
+| Opportunities | add, edit, delete any | add; edit and delete their own; vote | adds, tagged "AI heard it" |
+| Votes per person | sets any number in Settings | | |
+
+Everyone gives a name before they are in, on a phone or a laptop, so every vote, idea, system and phase carries one. Every change shows on every screen live.
 
 ## Data model
 

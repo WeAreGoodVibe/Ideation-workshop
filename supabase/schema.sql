@@ -7,7 +7,8 @@
 --   orgs            one row per client organisation (Watches of Switzerland, ...)
 --   org_members     who belongs to an org and whether they facilitate or take part
 --   workshops       one session; carries the template config (phases, agenda, ...)
---   systems         the tech stack for a workshop
+--   systems         the tech stack for a workshop (anyone in the room can add)
+--   phases          the process phases for a workshop (anyone in the room can add)
 --   opportunities   the register
 --   votes           dot votes, one row per person per idea, budget enforced
 --   transcript_chunks  facilitator-only transcript
@@ -75,6 +76,29 @@ create table if not exists public.systems (
   note text default '',
   sort int not null default 0
 );
+-- who added a system: the facilitator, a participant from their phone, or
+-- Claude from the transcript. Participants may only touch their own rows.
+alter table public.systems add column if not exists source text not null default 'Facilitator';
+alter table public.systems add column if not exists added_by text default '';
+alter table public.systems add column if not exists created_by uuid references auth.users(id) on delete set null;
+alter table public.systems drop constraint if exists systems_source_check;
+alter table public.systems add constraint systems_source_check check (source in ('Facilitator', 'Participant', 'AI'));
+
+-- process phases are rows (not workshop config) so participants can add
+-- them and every screen sees them live
+create table if not exists public.phases (
+  id uuid primary key default gen_random_uuid(),
+  workshop_id uuid not null references public.workshops(id) on delete cascade,
+  fn text not null default '',
+  name text not null,
+  what text default '',
+  prompts text[] not null default '{}',
+  source text not null default 'Facilitator' check (source in ('Facilitator', 'Participant', 'AI')),
+  added_by text default '',
+  created_by uuid references auth.users(id) on delete set null,
+  sort int not null default 0,
+  created_at timestamptz not null default now()
+);
 
 create table if not exists public.opportunities (
   id uuid primary key default gen_random_uuid(),
@@ -108,7 +132,7 @@ create table if not exists public.votes (
   workshop_id uuid not null references public.workshops(id) on delete cascade,
   opportunity_id uuid not null references public.opportunities(id) on delete cascade,
   user_id uuid not null references auth.users(id) on delete cascade,
-  dots int not null default 1 check (dots >= 0 and dots <= 20),
+  dots int not null default 1 check (dots >= 0),
   updated_at timestamptz not null default now(),
   primary key (opportunity_id, user_id)
 );
@@ -144,6 +168,7 @@ create index if not exists opportunities_workshop_idx on public.opportunities(wo
 create index if not exists votes_workshop_idx on public.votes(workshop_id);
 create index if not exists transcript_workshop_idx on public.transcript_chunks(workshop_id, id);
 create index if not exists systems_workshop_idx on public.systems(workshop_id);
+create index if not exists phases_workshop_idx on public.phases(workshop_id);
 create index if not exists second_ideas_workshop_idx on public.second_ideas(workshop_id);
 
 -- --------------------------------------------------------------- helpers --
@@ -208,6 +233,13 @@ begin
     values (new.id, s->>'name', coalesce(s->>'category', ''), coalesce(s->>'usedBy', ''), coalesce(s->>'connector', ''), coalesce(s->>'status', 'assumed'), coalesce(s->>'note', ''), i);
   end loop;
   i := 0;
+  for s in select * from jsonb_array_elements(coalesce(new.config->'phases', '[]'::jsonb)) loop
+    i := i + 1;
+    insert into phases (workshop_id, fn, name, what, prompts, source, sort)
+    values (new.id, coalesce(s->>'fn', ''), s->>'name', coalesce(s->>'what', ''),
+      coalesce((select array_agg(x) from jsonb_array_elements_text(coalesce(s->'prompts', '[]'::jsonb)) x), '{}'), 'Facilitator', i);
+  end loop;
+  i := 0;
   for s in select * from jsonb_array_elements(coalesce(new.config->'blindSpots', '[]'::jsonb)) loop
     i := i + 1;
     insert into second_ideas (workshop_id, key, title, fn, phase, surface, build, what, why, lift, comparator, confidence, origin, sort)
@@ -217,6 +249,26 @@ begin
 end; $$;
 drop trigger if exists workshops_after_insert on public.workshops;
 create trigger workshops_after_insert after insert on public.workshops for each row execute function public.workshop_after_insert();
+
+-- rows remember who made them, so a participant can edit and delete their own
+create or replace function public.stamp_created_by() returns trigger
+language plpgsql set search_path = public as $$
+begin
+  if new.created_by is null then new.created_by = auth.uid(); end if;
+  return new;
+end; $$;
+drop trigger if exists systems_created_by on public.systems;
+create trigger systems_created_by before insert on public.systems for each row execute function public.stamp_created_by();
+drop trigger if exists phases_created_by on public.phases;
+create trigger phases_created_by before insert on public.phases for each row execute function public.stamp_created_by();
+
+-- one-off: phases that older workshops kept in config become rows
+insert into public.phases (workshop_id, fn, name, what, prompts, source, sort)
+select w.id, coalesce(p.value->>'fn', ''), p.value->>'name', coalesce(p.value->>'what', ''),
+       coalesce((select array_agg(x) from jsonb_array_elements_text(coalesce(p.value->'prompts', '[]'::jsonb)) x), '{}'), 'Facilitator', p.ordinality
+from public.workshops w, jsonb_array_elements(coalesce(w.config->'phases', '[]'::jsonb)) with ordinality p
+where not exists (select 1 from public.phases ph where ph.workshop_id = w.id);
+update public.workshops set config = config - 'phases' where config ? 'phases';
 
 -- opportunities get the next number in the workshop. The advisory lock
 -- serialises inserts per workshop: the extractor adds several ideas at once
@@ -310,6 +362,7 @@ alter table public.org_members enable row level security;
 alter table public.workshops enable row level security;
 alter table public.workshop_secrets enable row level security;
 alter table public.systems enable row level security;
+alter table public.phases enable row level security;
 alter table public.opportunities enable row level security;
 alter table public.votes enable row level security;
 alter table public.transcript_chunks enable row level security;
@@ -342,7 +395,31 @@ create policy secrets_select on public.workshop_secrets for select using (public
 drop policy if exists systems_select on public.systems;
 create policy systems_select on public.systems for select using (public.ws_member(workshop_id));
 drop policy if exists systems_write on public.systems;
-create policy systems_write on public.systems for all using (public.ws_facilitator(workshop_id)) with check (public.ws_facilitator(workshop_id));
+drop policy if exists systems_fac on public.systems;
+create policy systems_fac on public.systems for all using (public.ws_facilitator(workshop_id)) with check (public.ws_facilitator(workshop_id));
+drop policy if exists systems_member_insert on public.systems;
+create policy systems_member_insert on public.systems for insert
+  with check (public.ws_member(workshop_id) and source = 'Participant');
+drop policy if exists systems_member_update on public.systems;
+create policy systems_member_update on public.systems for update
+  using (public.ws_member(workshop_id) and created_by = auth.uid() and source = 'Participant');
+drop policy if exists systems_member_delete on public.systems;
+create policy systems_member_delete on public.systems for delete
+  using (public.ws_member(workshop_id) and created_by = auth.uid() and source = 'Participant');
+
+drop policy if exists phases_select on public.phases;
+create policy phases_select on public.phases for select using (public.ws_member(workshop_id));
+drop policy if exists phases_fac on public.phases;
+create policy phases_fac on public.phases for all using (public.ws_facilitator(workshop_id)) with check (public.ws_facilitator(workshop_id));
+drop policy if exists phases_member_insert on public.phases;
+create policy phases_member_insert on public.phases for insert
+  with check (public.ws_member(workshop_id) and source = 'Participant');
+drop policy if exists phases_member_update on public.phases;
+create policy phases_member_update on public.phases for update
+  using (public.ws_member(workshop_id) and created_by = auth.uid() and source = 'Participant');
+drop policy if exists phases_member_delete on public.phases;
+create policy phases_member_delete on public.phases for delete
+  using (public.ws_member(workshop_id) and created_by = auth.uid() and source = 'Participant');
 
 drop policy if exists opps_select on public.opportunities;
 create policy opps_select on public.opportunities for select using (public.ws_member(workshop_id));
@@ -353,6 +430,9 @@ create policy opps_participant_insert on public.opportunities for insert
   with check (public.ws_member(workshop_id) and source = 'Participant');
 drop policy if exists opps_participant_update on public.opportunities;
 create policy opps_participant_update on public.opportunities for update
+  using (public.ws_member(workshop_id) and created_by = auth.uid() and source = 'Participant');
+drop policy if exists opps_participant_delete on public.opportunities;
+create policy opps_participant_delete on public.opportunities for delete
   using (public.ws_member(workshop_id) and created_by = auth.uid() and source = 'Participant');
 
 drop policy if exists votes_select on public.votes;
@@ -384,7 +464,7 @@ end $$;
 do $$
 declare t text;
 begin
-  foreach t in array array['workshops', 'systems', 'opportunities', 'votes', 'second_ideas'] loop
+  foreach t in array array['workshops', 'systems', 'phases', 'opportunities', 'votes', 'second_ideas'] loop
     if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t) then
       execute format('alter publication supabase_realtime add table public.%I', t);
     end if;
@@ -392,11 +472,15 @@ begin
 end $$;
 alter table public.votes replica identity full;
 alter table public.opportunities replica identity full;
+alter table public.votes drop constraint if exists votes_dots_check;
+alter table public.votes add constraint votes_dots_check check (dots >= 0);
+alter table public.systems replica identity full;
+alter table public.phases replica identity full;
 
 -- -------------------------------------------------------------- hardening --
 -- Helpers are for signed-in users only; trigger functions need no callers.
 revoke execute on all functions in schema public from public, anon;
-revoke execute on function public.touch_updated_at(), public.opportunity_seq(), public.check_vote_budget(), public.org_creator_is_facilitator(), public.workshop_after_insert() from authenticated;
+revoke execute on function public.touch_updated_at(), public.opportunity_seq(), public.check_vote_budget(), public.org_creator_is_facilitator(), public.workshop_after_insert(), public.stamp_created_by() from authenticated;
 alter function public.touch_updated_at() set search_path = public;
 alter function public.opportunity_seq() set search_path = public;
 grant execute on function public.is_member(uuid), public.is_facilitator(uuid), public.workshop_org(uuid), public.ws_member(uuid), public.ws_facilitator(uuid), public.join_workshop(text, text, text), public.cast_vote(uuid, int), public.my_role(uuid) to authenticated;
