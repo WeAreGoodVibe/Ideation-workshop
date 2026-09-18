@@ -29,7 +29,7 @@ Three parts: the static page plus two small server functions on Vercel, the data
 |---|---|---|
 | `SUPABASE_URL` | Project URL | `/api/config`, `/api/extract`, `/api/ingest` |
 | `SUPABASE_ANON_KEY` | anon public key | `/api/config` (sent to the browser, safe) |
-| `SUPABASE_SERVICE_ROLE_KEY` | service_role key | `/api/extract` role check, `/api/ingest` writes. Never sent to a browser. |
+| `SUPABASE_SERVICE_ROLE_KEY` | service_role key (legacy JWT) or a new-style `sb_secret_…` key | `/api/ingest` only (the transcript bridge). `/api/extract` checks the facilitator with the caller's own token and does not need it. Never sent to a browser. A wrong value here shows up as `supabase 401: Invalid API key` in the Live log of whichever route uses it. |
 | `ANTHROPIC_API_KEY` | your key | `/api/extract`: the listening loop and the second viewpoint |
 | `ANTHROPIC_MODEL` | optional, default `claude-opus-5` | `/api/extract` |
 

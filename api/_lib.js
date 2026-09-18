@@ -21,19 +21,42 @@ async function readBody(req) {
 }
 
 /* Who is calling, from the Supabase JWT the browser sends. */
-async function userFromRequest(req) {
+function tokenFromRequest(req) {
   const auth = req.headers.authorization || '';
-  const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+  return auth.startsWith('Bearer ') ? auth.slice(7) : '';
+}
+async function userFromRequest(req) {
+  const token = tokenFromRequest(req);
   if (!token || !SUPABASE_URL) return null;
   const r = await fetch(SUPABASE_URL + '/auth/v1/user', { headers: { apikey: ANON, authorization: 'Bearer ' + token } });
   if (!r.ok) return null;
   return r.json();
 }
 
+/* A call as the signed-in person, under their own row level security. The
+   anon key plus their JWT is all it needs, so the service key stays out of
+   the facilitator path entirely. */
+async function rpcAs(token, fn, args) {
+  const r = await fetch(SUPABASE_URL + '/rest/v1/rpc/' + fn, {
+    method: 'POST',
+    headers: { apikey: ANON, authorization: 'Bearer ' + token, 'content-type': 'application/json' },
+    body: JSON.stringify(args || {})
+  });
+  const text = await r.text();
+  let data = null; try { data = text ? JSON.parse(text) : null; } catch (e) { data = text; }
+  if (!r.ok) throw new Error('supabase ' + r.status + ': ' + (typeof data === 'string' ? data : JSON.stringify(data)));
+  return data;
+}
+
 /* Service-role query against PostgREST. */
 async function sb(path, init) {
+  if (!SERVICE) throw new Error('SUPABASE_SERVICE_ROLE_KEY is not set on the server');
   const opts = Object.assign({}, init || {});
-  opts.headers = Object.assign({ apikey: SERVICE, authorization: 'Bearer ' + SERVICE, 'content-type': 'application/json', prefer: 'return=representation' }, (init && init.headers) || {});
+  /* Legacy service_role keys are JWTs and go in both headers. The newer
+     sb_secret_ keys are not JWTs and must only be sent as apikey. */
+  const base = { apikey: SERVICE, 'content-type': 'application/json', prefer: 'return=representation' };
+  if (!/^sb_secret_/.test(SERVICE)) base.authorization = 'Bearer ' + SERVICE;
+  opts.headers = Object.assign(base, (init && init.headers) || {});
   const r = await fetch(SUPABASE_URL + '/rest/v1/' + path, opts);
   const text = await r.text();
   let data = null; try { data = text ? JSON.parse(text) : null; } catch (e) { data = text; }
@@ -44,11 +67,11 @@ async function sbGet(path) { return sb(path, { method: 'GET' }); }
 async function sbPost(path, body) { return sb(path, { method: 'POST', body: JSON.stringify(body) }); }
 async function sbPatch(path, body) { return sb(path, { method: 'PATCH', body: JSON.stringify(body) }); }
 
-async function isFacilitator(userId, workshopId) {
-  const ws = await sbGet('workshops?id=eq.' + workshopId + '&select=org_id');
-  if (!ws || !ws[0]) return false;
-  const m = await sbGet('org_members?org_id=eq.' + ws[0].org_id + '&user_id=eq.' + userId + '&role=eq.facilitator&select=user_id');
-  return !!(m && m[0]);
+/* Facilitator check as the caller: my_role() is the same function the page
+   uses, so this cannot disagree with what the sidebar shows. */
+async function isFacilitator(token, workshopId) {
+  const role = await rpcAs(token, 'my_role', { p_ws: workshopId });
+  return role === 'facilitator';
 }
 
 /* Claude, from the server. The key never reaches a browser. */
@@ -81,4 +104,4 @@ function parseLooseJSON(text) {
   throw new Error('No JSON in the model reply');
 }
 
-module.exports = { json, readBody, userFromRequest, sbGet, sbPost, sbPatch, isFacilitator, askClaude, SUPABASE_URL, ANON };
+module.exports = { json, readBody, tokenFromRequest, userFromRequest, rpcAs, sbGet, sbPost, sbPatch, isFacilitator, askClaude, SUPABASE_URL, ANON };

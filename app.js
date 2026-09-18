@@ -49,7 +49,7 @@
 
   var CAP = { sample: null, mcp: null, db: null, downloads: null, probed: false };
   var UI = { view: 'runsheet', opsMode: 'cards', filter: { fn: 'All', status: 'All', q: '' }, present: false, seq: 0 };
-  var RUN = { extracting: false, speech: null, wisprTimer: null, feedTimer: null, extractTimer: null, demoTimer: null, demoIdx: 0, lastCount: 0, source: 'none', log: [] };
+  var RUN = { extracting: false, speech: null, wisprTimer: null, feedTimer: null, extractTimer: null, demoTimer: null, demoIdx: 0, lastCount: 0, source: 'none', log: [], failures: 0 };
 
   /* ------------------------------------------------------ persistence -- */
   var SHARED_KEYS = ['opportunities', 'systems', 'secondAI', 'revealed', 'agendaIdx', 'blockDone', 'updatedAt'];
@@ -260,6 +260,9 @@
     clearTimeout(RUN.extractTimer);
     var pending = fullTranscript().length - S.consumedChars;
     var wait = pending >= S.settings.minChars * 3 ? 1500 : S.settings.pollSec * 1000;
+    /* After a failure, back off: the same window will fail the same way, and
+       a server that is misconfigured gains nothing from a call every second. */
+    if (RUN.failures) wait = Math.max(wait, Math.min(120000, 10000 * Math.pow(2, RUN.failures - 1)));
     RUN.extractTimer = setTimeout(function () { extractNow(false); }, wait);
   }
 
@@ -285,11 +288,15 @@
         if (SBA()) SB.updateWorkshop({ consumed_chars: consumedTo }).catch(function () {});
         log('AI returned ' + list.length + ', added ' + added);
         if (added) toast('+' + added + ' idea' + (added > 1 ? 's' : '') + ' on the board');
+        RUN.failures = 0;
         setAiStatus(RUN.source !== 'none' ? 'live' : 'idle');
       })
       .catch(function (e) {
-        log('AI error: ' + (e && (e.code + ' ' + e.message)));
-        setAiStatus('bad');
+        RUN.failures++;
+        var msg = (e && (e.code + ' ' + e.message)) || String(e);
+        log('AI error: ' + msg);
+        setAiStatus('bad', 'AI error, see Live' + (RUN.failures > 1 ? ' (' + RUN.failures + ' in a row, retrying slower)' : ''));
+        if (RUN.failures === 1) toast('AI read failed: ' + String((e && e.message) || e).slice(0, 140));
         if (e && e.code === 'not_granted') { CAP.sample = null; setModeStatus(); }
       })
       .then(function () { RUN.extracting = false; updateTiles(); if (S.settings.autoExtract) scheduleExtract(); });

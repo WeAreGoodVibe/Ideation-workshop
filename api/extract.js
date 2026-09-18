@@ -3,7 +3,7 @@
    server-side key and returns the parsed JSON. The page inserts the rows
    itself under its own row-level-security rights. */
 'use strict';
-const { json, readBody, userFromRequest, isFacilitator, askClaude } = require('./_lib');
+const { json, readBody, tokenFromRequest, userFromRequest, isFacilitator, askClaude } = require('./_lib');
 
 const FUNCTIONS = ['Finance', 'Purchasing', 'Both', 'Org-wide'];
 const SURFACES = ['Claude Chat', 'Claude Project', 'Scheduled Task', 'Cowork', 'Skill', 'Connector setup'];
@@ -29,7 +29,7 @@ module.exports = async (req, res) => {
     if (!user) return json(res, 401, { error: 'Sign in first' });
     const body = await readBody(req);
     if (!body.workshopId || !body.prompt) return json(res, 400, { error: 'workshopId and prompt are required' });
-    if (!(await isFacilitator(user.id, body.workshopId))) return json(res, 403, { error: 'Facilitators only' });
+    if (!(await isFacilitator(tokenFromRequest(req), body.workshopId))) return json(res, 403, { error: 'Facilitators only' });
     if (String(body.prompt).length > 200000) return json(res, 413, { error: 'Prompt too long' });
     const result = body.mode === 'second'
       ? await askClaude(body.prompt, { effort: 'high' })
