@@ -7,10 +7,10 @@ A facilitation board for a 90-minute AI opportunity workshop with the Finance an
 | View | Who sees it | What it is for |
 |---|---|---|
 | Run sheet | Facilitator | Eight timed blocks, the script for each, the questions to ask, a question bank. Timer and block name show in the top bar for the room. |
-| Systems | Room | The tech stack, assumed until confirmed. Each system shows what Claude can reach today. |
-| Process walk | Room | Finance and Purchasing phases as cards. The number on each card is how many opportunities landed there. The heat map builds itself. |
+| Systems | Room | The tech stack, assumed until confirmed. Each system shows what Claude can reach today. Starts empty for a new workshop; add them before the day, or let Claude add the ones the room names in the transcript. |
+| Process walk | Room | Each team's process phases as cards. The number on each card is how many opportunities landed there. The heat map builds itself. Starts empty; add phases by hand or let Claude add the stages the room walks through. |
 | Opportunities | Room | Every idea, tagged by function (Finance, Purchasing, Both, Org-wide), phase, Claude surface, build type, status. Cards or table. Inline editing. Votes. Excel export. |
-| Second viewpoint | Room, after reveal | Sealed until block 7. Twelve consultant blind-spot ideas prepared in advance, plus what Claude writes from today's transcript. Each one says why the room did not raise it. |
+| Second viewpoint | Room, after reveal | Sealed until block 7. What Claude writes from today's transcript: the opportunities this room did not raise, each with why. Only this workshop's transcript and board are used; nothing is carried in from another workshop. |
 | Live capture | Facilitator | Transcript sources, the AI read loop, the log. Hidden in presentation mode. |
 | Settings | Facilitator | API key, model, poll rate, Wispr Flow meeting, feed URL, theme. |
 
@@ -61,7 +61,7 @@ vendor/             SheetJS for the Excel export
 docs/               workshop plan and the Wispr Flow bridge prompt
 ```
 
-Edit `data/seed.js` to change the client, the agenda, the phases or the prepared blind spots. Nothing else needs touching for a different workshop.
+`data/seed.js` is the local-mode demo (the Watches of Switzerland example) and the shared vocabulary (Claude surfaces, build types, statuses, the question bank). A workshop created on the backend does not copy its systems, phases, blind spots or demo transcript: every new workshop is a blank slate with a run sheet built from the teams you name. Systems and phases are added in the board, by hand or by Claude from the transcript.
 
 ## Data model
 

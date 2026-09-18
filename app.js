@@ -22,6 +22,11 @@
 
   var SEED = window.SEED;
   var CFG = SEED;                      /* the active workshop template; swapped when a workshop loads */
+  /* Content a workshop must bring itself. SEED only supplies vocabulary
+     (surfaces, build types, statuses, the question bank) to a workshop from
+     the backend; systems, phases and prepared blind spots start empty so
+     nothing from one client shows up on another's board. */
+  var BLANK = { systems: [], phases: [], blindSpots: [], demoTranscript: [] };
   var MODE = { sb: false, role: 'local' }; /* 'local' | 'facilitator' | 'participant' */
   var SBA = function () { return !!(window.SB && SB.active); };
   var $ = function (sel, root) { return (root || document).querySelector(sel); };
@@ -169,27 +174,39 @@
   }
 
   /* ----------------------------------------------------------------- AI -- */
-  var SCHEMA = {
-    type: 'object', additionalProperties: false, required: ['opportunities'],
-    properties: { opportunities: { type: 'array', items: {
-      type: 'object', additionalProperties: false,
-      required: ['title', 'function', 'phase', 'surface', 'build', 'pain', 'direction', 'systems', 'quote', 'raisedBy', 'confidence'],
-      properties: {
-        title: { type: 'string' }, function: { type: 'string', enum: CFG.functionsTags },
-        phase: { type: 'string' }, surface: { type: 'string', enum: CFG.surfaces.map(function (s) { return s.key; }) },
-        build: { type: 'string', enum: CFG.buildTypes }, pain: { type: 'string' }, direction: { type: 'string' },
-        systems: { type: 'array', items: { type: 'string' } }, quote: { type: 'string' }, raisedBy: { type: 'string' },
-        confidence: { type: 'string', enum: ['High', 'Medium', 'Low'] }
-      } } } }
-  };
+  function schema() { return {
+    type: 'object', additionalProperties: false, required: ['opportunities', 'systems', 'phases'],
+    properties: {
+      opportunities: { type: 'array', items: {
+        type: 'object', additionalProperties: false,
+        required: ['title', 'function', 'phase', 'surface', 'build', 'pain', 'direction', 'systems', 'quote', 'raisedBy', 'confidence'],
+        properties: {
+          title: { type: 'string' }, function: { type: 'string', enum: CFG.functionsTags },
+          phase: { type: 'string' }, surface: { type: 'string', enum: CFG.surfaces.map(function (s) { return s.key; }) },
+          build: { type: 'string', enum: CFG.buildTypes }, pain: { type: 'string' }, direction: { type: 'string' },
+          systems: { type: 'array', items: { type: 'string' } }, quote: { type: 'string' }, raisedBy: { type: 'string' },
+          confidence: { type: 'string', enum: ['High', 'Medium', 'Low'] }
+        } } },
+      systems: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['name', 'category', 'usedBy', 'note'],
+        properties: { name: { type: 'string' }, category: { type: 'string' }, usedBy: { type: 'string' }, note: { type: 'string' } } } },
+      phases: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['name', 'function', 'what'],
+        properties: { name: { type: 'string' }, function: { type: 'string', enum: CFG.functionsTags }, what: { type: 'string' } } } }
+    }
+  }; }
 
+  function teamsSentence() { var f = (CFG.client && CFG.client.functions) || []; return f.length ? f.join(' and ') + (f.length === 1 ? ' team' : ' teams') : 'the team'; }
+  function fnEnum() { return CFG.functionsTags.join('|'); }
   function contextBlock() {
+    var c = CFG.client;
     return [
-      'CLIENT: ' + CFG.client.name + ' (luxury watch and jewellery retail, UK listed). Workshop with eight people from Finance and Purchasing.',
-      'NORTH STAR: ' + CFG.client.northStar + '.',
-      'SCOPE: ' + CFG.client.scopeCriterion,
-      'SYSTEMS IN PLAY: ' + S.systems.map(function (s) { return s.name + ' (' + s.category + ', connector: ' + s.connector + ')'; }).join('; ') + '.',
-      'PROCESS PHASES (use these names exactly for "phase"): ' + CFG.phases.map(function (p) { return p.name; }).join(' | ') + '.',
+      'CLIENT: ' + c.name + (c.about ? ' (' + c.about + ')' : '') + '. Workshop with the ' + teamsSentence() + '.',
+      'NORTH STAR: ' + c.northStar + '.',
+      'SCOPE: ' + c.scopeCriterion,
+      'SYSTEMS IN PLAY: ' + (S.systems.length ? S.systems.map(function (s) { return s.name + ' (' + s.category + ', connector: ' + s.connector + ')'; }).join('; ') : 'none listed yet; name the systems the transcript mentions') + '.',
+      CFG.phases.length
+        ? 'PROCESS PHASES (use these names exactly for "phase"): ' + CFG.phases.map(function (p) { return p.name; }).join(' | ') + '.'
+        : 'PROCESS PHASES: none defined yet. For "phase" write the process stage in two to four words, in the client\'s own terms (for example "Month-end close").',
+      'FUNCTIONS (pick one for "function"): ' + fnEnum() + '.',
       'CLAUDE SURFACES (pick one for "surface"): ' + CFG.surfaces.map(function (s) { return s.key + ' = ' + s.tell; }).join('; ') + '.',
       'BUILD TYPES: Skill = a written procedure Claude follows on demand; Scheduled task = a prompt that runs on a timer with connectors; Setup = connect a system or load a Project; Project = a standing context with instructions and files; Workflow redesign = the human steps change, Claude carries a stage.'
     ].join('\n');
@@ -205,21 +222,53 @@
       '- Prefer specific over generic. "Triage the AP mailbox every morning" beats "use AI for email".',
       '- Zero is a valid answer. Return at most three per window.',
       '- title: verb-led, at most twelve words. pain: one sentence in their words. direction: one or two sentences saying what Claude does, with the input and the output named. quote: a short verbatim fragment from the transcript. raisedBy: the speaker name if given, else "Room". Use Australian English.',
+      'ALSO LISTEN FOR, in the same window:',
+      '- "systems": software or tools the room names that are NOT already in SYSTEMS IN PLAY (an ERP, a portal, a mailbox, a spreadsheet that is really a database, a reporting tool). name: the product name as said. category: two or three words (ERP / finance, Documents, Email, Reporting, Spreadsheet, Supplier portal...). usedBy: which team, from the FUNCTIONS list, or "Everyone". note: one sentence on what they use it for, from the transcript. Never list a system that is not actually mentioned.',
+      '- "phases": stages of a process the room describes that are NOT already in PROCESS PHASES. name: two to four words in the client\'s own terms (for example "Month-end close", "Purchase orders"). function: which team owns it. what: one sentence on what happens in it. Reuse an existing phase name for "phase" on an opportunity whenever one fits; add a new phase only when the room is clearly walking through a stage that has no name yet. At most two new phases per window.',
+      '- Empty arrays are the normal answer for systems and phases in most windows.',
       'TRANSCRIPT WINDOW:',
       windowText,
-      'Reply with only JSON of the form {"opportunities":[{"title":"","function":"Finance|Purchasing|Both|Org-wide","phase":"","surface":"","build":"","pain":"","direction":"","systems":[""],"quote":"","raisedBy":"","confidence":"High|Medium|Low"}]}'
+      'Reply with only JSON of the form {"opportunities":[{"title":"","function":"' + fnEnum() + '","phase":"","surface":"","build":"","pain":"","direction":"","systems":[""],"quote":"","raisedBy":"","confidence":"High|Medium|Low"}],"systems":[{"name":"","category":"","usedBy":"","note":""}],"phases":[{"name":"","function":"' + fnEnum() + '","what":""}]}'
     ].join('\n\n');
+  }
+
+  /* Systems and phases heard in the transcript: add what is new, by name.
+     Systems land as "assumed" so the room still has to confirm them; phases
+     land in the workshop's config so the process walk grows as they talk. */
+  function addHeardSystems(list) {
+    var have = {}; S.systems.forEach(function (s) { have[norm(s.name)] = true; });
+    var added = 0;
+    (list || []).forEach(function (x) {
+      var name = String((x && x.name) || '').trim(); if (!name || have[norm(name)]) return;
+      have[norm(name)] = true; added++;
+      var sys = { name: name, category: String(x.category || ''), usedBy: String(x.usedBy || ''), connector: 'Unknown', status: 'assumed', note: String(x.note || ''), sort: 50 + S.systems.length + added };
+      if (SBA()) SB.insertSystem(sys).catch(function () {});
+      else S.systems.push(Object.assign({ id: 's' + uid() }, sys));
+    });
+    return added;
+  }
+  function addHeardPhases(list) {
+    var have = {}; CFG.phases.forEach(function (p) { have[norm(p.name)] = true; });
+    var added = 0;
+    (list || []).slice(0, 2).forEach(function (x) {
+      var name = String((x && x.name) || '').trim(); if (!name || have[norm(name)]) return;
+      have[norm(name)] = true; added++;
+      var fn = CFG.functionsTags.indexOf(x['function']) >= 0 ? x['function'] : (CFG.functionsTags.indexOf(x.fn) >= 0 ? x.fn : CFG.functionsTags[0]);
+      CFG.phases.push({ id: 'p' + uid(), fn: fn, name: name, what: String(x.what || ''), prompts: [] });
+    });
+    if (added) savePhases();
+    return added;
   }
 
   function secondPrompt(transcript, titles) {
     return [
-      'You are the outside consultant at the end of a live ideation workshop. The room has raised its own list. Your job is the blind-spot layer: six to eight opportunities they did NOT raise, that follow from what they said, that Claude can carry.',
+      'You are the outside consultant at the end of a live ideation workshop. The room has raised its own list. Your job is the blind-spot layer: six to eight opportunities they did NOT raise, that follow from what was said in THIS transcript, that Claude can carry. Use only this workshop\'s transcript and board as evidence; do not import ideas from other clients or industries.',
       contextBlock(),
       'ALREADY RAISED (do not repeat, do not lightly rephrase): ' + (titles.length ? titles.join(' | ') : '(nothing)'),
       'For every idea the mandatory field is "why": why the room did not raise it. If you cannot name the blind spot, it is not a blind spot; leave it out. Anchor each to a real comparator pattern. Give an honest confidence.',
       'TRANSCRIPT:',
       transcript,
-      'Reply with only JSON: {"ideas":[{"title":"","function":"Finance|Purchasing|Both|Org-wide","phase":"","surface":"","build":"","what":"","why":"","lift":"","comparator":"","confidence":"High|Medium|Low"}]}'
+      'Reply with only JSON: {"ideas":[{"title":"","function":"' + fnEnum() + '","phase":"","surface":"","build":"","what":"","why":"","lift":"","comparator":"","confidence":"High|Medium|Low"}]}'
     ].join('\n\n');
   }
 
@@ -227,12 +276,12 @@
     if (CAP.sample) {
       return CAP.sample.json(prompt, { modelTier: tier === 'complex' ? 'complex' : 'quick', cache: false });
     }
-    if (serverAI()) return SB.api(tier === 'complex' ? 'second' : 'extract', prompt);
+    if (serverAI()) return SB.api(tier === 'complex' ? 'second' : 'extract', prompt, { functions: CFG.functionsTags });
     var key = S.settings.apiKey;
     if (!key) return Promise.reject({ code: 'no_key', message: 'No API key' });
     var body = {
       model: S.settings.model || 'claude-opus-5', max_tokens: 6000,
-      output_config: { effort: tier === 'complex' ? 'high' : 'low', format: { type: 'json_schema', schema: tier === 'complex' ? undefined : SCHEMA } },
+      output_config: { effort: tier === 'complex' ? 'high' : 'low', format: { type: 'json_schema', schema: tier === 'complex' ? undefined : schema() } },
       messages: [{ role: 'user', content: prompt }]
     };
     if (tier === 'complex') delete body.output_config.format;
@@ -281,13 +330,20 @@
     return askJSON(extractPrompt(windowText, S.opportunities.map(function (o) { return o.title; })), 'quick')
       .then(function (j) {
         var list = (j && j.opportunities) || [];
+        var phasesAdded = addHeardPhases(j && j.phases);
+        var systemsAdded = addHeardSystems(j && j.systems);
         var added = 0;
         list.forEach(function (o) { if (addOpportunity(o, 'AI')) added++; });
         S.consumedChars = consumedTo;
         save();
         if (SBA()) SB.updateWorkshop({ consumed_chars: consumedTo }).catch(function () {});
-        log('AI returned ' + list.length + ', added ' + added);
-        if (added) toast('+' + added + ' idea' + (added > 1 ? 's' : '') + ' on the board');
+        log('AI returned ' + list.length + ', added ' + added + (systemsAdded ? ', heard ' + systemsAdded + ' system' + (systemsAdded > 1 ? 's' : '') : '') + (phasesAdded ? ', heard ' + phasesAdded + ' phase' + (phasesAdded > 1 ? 's' : '') : ''));
+        var bits = [];
+        if (added) bits.push('+' + added + ' idea' + (added > 1 ? 's' : ''));
+        if (systemsAdded) bits.push('+' + systemsAdded + ' system' + (systemsAdded > 1 ? 's' : ''));
+        if (phasesAdded) bits.push('+' + phasesAdded + ' phase' + (phasesAdded > 1 ? 's' : ''));
+        if (bits.length) toast(bits.join(', ') + ' on the board');
+        if ((systemsAdded || phasesAdded) && !SBA()) render();
         RUN.failures = 0;
         setAiStatus(RUN.source !== 'none' ? 'live' : 'idle');
       })
@@ -328,7 +384,7 @@
     var t = norm(o.title); if (!t) return false;
     var dup = S.opportunities.some(function (x) { var y = norm(x.title); return y === t || (y.length > 12 && (y.indexOf(t) >= 0 || t.indexOf(y) >= 0)); });
     if (dup) return false;
-    var phase = CFG.phases.some(function (p) { return p.name === o.phase; }) ? o.phase : (o.phase || 'Data foundations');
+    var phase = String(o.phase || '').trim();
     var row = {
       title: o.title, fn: CFG.functionsTags.indexOf(o.function) >= 0 ? o.function : (o.fn || 'Both'),
       phase: phase, cluster: o.cluster || '', surface: o.surface || 'Claude Chat', build: o.build || 'Skill',
@@ -553,7 +609,7 @@
         '<button class="btn btn--sm btn--ghost" data-action="dismissguide">Hide</button></div>';
     }
     if (SBA() && SB.ws) {
-      html += '<div class="card joincard" data-who="room" data-tip="Show this to the room in block 1. Everyone scans the square with their phone camera, types their name and is in. No email, no password. The link and code are the fallback for a phone that will not scan."><div class="joincard__qr" data-action="bigqr" title="Show it big">' + qrSvg(joinLink()) + '</div><div><div class="k">Scan to join, or open the link</div><div class="joincard__url">' + esc(participantLink()) + '</div></div><div><div class="k">Code</div><div class="joincard__code">' + esc(SB.ws.join_code) + '</div></div><div class="fac stack"><button class="btn btn--sm" data-action="bigqr">Show big</button><button class="btn btn--sm btn--ghost" data-action="copylink">Copy link</button></div></div>';
+      html += '<div class="card joincard" data-who="room" data-tip="Show this to the room in block 1. Everyone scans the square with their phone camera, types their name and is in. No email, no password. The link and code are the fallback for a phone that will not scan."><div class="joincard__qr" data-action="bigqr" title="Show it big">' + qrSvg(joinLink()) + '</div><div><div class="k">Scan to join, or open the link</div><div class="joincard__url">' + esc(joinLink()) + '</div></div><div><div class="k">Code</div><div class="joincard__code">' + esc(SB.ws.join_code) + '</div></div><div class="fac stack"><button class="btn btn--sm" data-action="bigqr">Show big</button><button class="btn btn--sm btn--ghost" data-action="copylink">Copy link</button></div></div>';
     }
     html += '<div class="frame-strip">' +
       '<div class="frame-cell" data-tip="' + esc(HELP.tips.other.frameNorth) + '" data-who="both"><div class="k">North star</div><div class="v">' + esc(c.northStar) + '</div></div>' +
@@ -578,6 +634,7 @@
   function vSystems() {
     var html = head('What you touch', 'Assumed until the room confirms it. The connector column is the seam Claude has to cross.',
       '<button class="btn fac" data-action="addsystem">Add a system</button>');
+    if (!S.systems.length) html += '<div class="card empty" data-who="you"><h3>No systems yet</h3><p class="muted">This workshop starts blank. Add the systems this team touches (the ERP, the document store, the mailbox, the spreadsheets) before the day, or build the list live in block 2 while the room corrects you.</p></div>';
     html += '<div class="grid grid--3">';
     S.systems.forEach(function (s) {
       html += '<div class="card sys" data-sys="' + esc(s.id) + '"><div><div class="sys__name">' + esc(s.name) + '</div><div class="sys__meta">' + chip('chip--st-' + s.status, s.status) + chip('', s.category) + chip('', s.usedBy) + '</div>' +
@@ -589,20 +646,36 @@
   }
 
   function vProcess() {
-    var html = head('Process walk', 'Phase by phase. The number is how many opportunities have landed on that phase: the heat map builds itself.', '');
-    ['Finance', 'Purchasing', 'Both', 'Org-wide'].forEach(function (fn) {
+    var html = head('Process walk', 'Phase by phase. The number is how many opportunities have landed on that phase: the heat map builds itself.',
+      '<button class="btn fac" data-action="addphase">Add a phase</button>');
+    if (!CFG.phases.length) html += '<div class="card empty" data-who="you"><h3>No phases yet</h3><p class="muted">This workshop starts blank. Add the process phases for each team (for example "Accounts payable", "Month-end close", "Purchase orders") before the day. Ideas Claude hears before then are listed below under "Not yet placed" and can be moved onto a phase later.</p></div>';
+    var groups = CFG.functionsTags.slice(); CFG.phases.forEach(function (p) { if (groups.indexOf(p.fn) < 0) groups.push(p.fn); });
+    groups.forEach(function (fn) {
       var ps = CFG.phases.filter(function (p) { return p.fn === fn; }); if (!ps.length) return;
       html += '<h2 style="margin:var(--sc-6) 0 var(--sc-3)">' + esc(fn === 'Both' ? 'Cross-cutting' : fn) + '</h2><div class="grid grid--2">';
       ps.forEach(function (p) {
         var ops = opCountFor(p.name);
-        html += '<div class="card phase" data-phase="' + esc(p.id) + '"><div><h3>' + esc(p.name) + '</h3><p class="phase__what">' + esc(p.what) + '</p>' +
-          '<ul class="phase__prompts fac">' + p.prompts.map(function (q) { return '<li>' + esc(q) + '</li>'; }).join('') + '</ul>' +
+        html += '<div class="card phase" data-phase="' + esc(p.id) + '"><div><h3>' + esc(p.name) + '</h3><p class="phase__what">' + esc(p.what || '') + '</p>' +
+          '<ul class="phase__prompts fac">' + (p.prompts || []).map(function (q) { return '<li>' + esc(q) + '</li>'; }).join('') + '</ul>' +
           (ops.length ? '<div class="phase__ops">' + ops.map(function (o) { return chip('chip--fn-' + o.fn, o.id + ' ' + o.title); }).join('') + '</div>' : '') +
-          '<div class="row fac" style="margin-top:10px"><button class="btn btn--sm" data-action="newop" data-phase="' + esc(p.name) + '" data-fn="' + esc(p.fn) + '">Add opportunity here</button></div></div>' +
+          '<div class="row fac" style="margin-top:10px"><button class="btn btn--sm" data-action="newop" data-phase="' + esc(p.name) + '" data-fn="' + esc(p.fn) + '">Add opportunity here</button><button class="btn btn--sm btn--ghost" data-action="editphase" data-id="' + esc(p.id) + '">Edit phase</button></div></div>' +
           '<div class="phase__count' + (ops.length ? '' : ' zero') + '">' + ops.length + '</div></div>';
       });
       html += '</div>';
     });
+    var placed = {}; CFG.phases.forEach(function (p) { placed[p.name] = true; });
+    var loose = S.opportunities.filter(function (o) { return !placed[o.phase] && o.status !== 'Merged'; });
+    if (loose.length) {
+      var byPhase = {}; loose.forEach(function (o) { var k = o.phase || 'No phase'; (byPhase[k] = byPhase[k] || []).push(o); });
+      html += '<h2 style="margin:var(--sc-6) 0 var(--sc-3)">Not yet placed on a phase</h2><p class="muted small fac">Claude named these stages from the transcript. Add a phase with the same name to adopt them, or edit each idea and pick a phase.</p><div class="grid grid--2">';
+      Object.keys(byPhase).forEach(function (k) {
+        var ops = byPhase[k];
+        html += '<div class="card phase"><div><h3>' + esc(k) + '</h3><div class="phase__ops">' + ops.map(function (o) { return chip('chip--fn-' + o.fn, o.id + ' ' + o.title); }).join('') + '</div>' +
+          (k !== 'No phase' ? '<div class="row fac" style="margin-top:10px"><button class="btn btn--sm" data-action="adoptphase" data-name="' + esc(k) + '" data-fn="' + esc(ops[0].fn) + '">Make this a phase</button></div>' : '') + '</div>' +
+          '<div class="phase__count">' + ops.length + '</div></div>';
+      });
+      html += '</div>';
+    }
     return html;
   }
 
@@ -656,7 +729,7 @@
     }
     return '<div class="vote"><button data-action="vote" data-id="' + o.id + '" data-d="-1" aria-label="Remove a vote">−</button><span class="vote__n">' + o.votes + '</span><button data-action="vote" data-id="' + o.id + '" data-d="1" aria-label="Add a vote">+</button></div>';
   }
-  function sel(field, id, opts, val) { return '<select data-field="' + field + '" data-id="' + id + '">' + opts.map(function (v) { return '<option' + (v === val ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('') + '</select>'; }
+  function sel(field, id, opts, val) { if (val && opts.indexOf(val) < 0) opts = opts.concat([val]); if (!opts.length) opts = ['']; return '<select data-field="' + field + '" data-id="' + id + '">' + opts.map(function (v) { return '<option' + (v === val ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('') + '</select>'; }
   function opsTable(ops) {
     var cols = ['ID', 'Title', 'Function', 'Phase', 'Surface', 'Build', 'Status', 'Pain', 'What Claude does', 'Systems', 'Raised by', 'Owner', 'Votes'];
     var rows = ops.map(function (o) {
@@ -671,7 +744,7 @@
 
   function vSecond() {
     if (!S.revealed) {
-      return '<div class="locked"><h2>The second viewpoint</h2><p>Sealed until block 7. What we saw from outside, and for each one, why we think it did not come up.</p>' +
+      return '<div class="locked"><h2>The second viewpoint</h2><p>Sealed until the second viewpoint block. ' + (CFG.blindSpots.length ? 'What we saw from outside, and for each one, why we think it did not come up.' : 'Claude reads this workshop\'s transcript and board and writes the opportunities this room did not raise, each with a line on why it did not come up. Nothing is carried over from another workshop.') + '</p>' +
         '<div class="row fac" style="justify-content:center;margin-top:24px"><button class="btn btn--primary" data-action="reveal">Reveal</button><span class="muted small">' + (aiAvailable() ? 'Also asks Claude for blind spots from today’s transcript.' : 'AI is off, so this reveals the consultant list only.') + '</span></div></div>';
     }
     var raisedOps = S.opportunities.filter(function (o) { return o.status !== 'Merged' && o.status !== 'Parked'; });
@@ -687,7 +760,7 @@
       '<p class="reveal__lede">Every idea below carries one line: why it did not come up. Keep scrolling to read them.</p></div>' +
       '<div class="reveal__hint" aria-hidden="true"><span>Scroll down</span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></div>' +
       '</div></section>';
-    html += '<div class="view__head" style="margin-top:var(--sc-6)"><div><h1>The second viewpoint</h1><p>' + CFG.blindSpots.length + ' prepared before today' + (S.secondAI.length ? ', ' + S.secondAI.length + ' written by Claude from the transcript' : '') + '. Promote the ones that land straight onto the board.</p></div>' +
+    html += '<div class="view__head" style="margin-top:var(--sc-6)"><div><h1>The second viewpoint</h1><p>' + (CFG.blindSpots.length ? CFG.blindSpots.length + ' prepared before today' + (S.secondAI.length ? ', ' + S.secondAI.length + ' written by Claude from the transcript' : '') : (S.secondAI.length ? S.secondAI.length + ' written by Claude from today\'s transcript, none carried in from elsewhere' : 'Nothing here yet: Claude writes this list from today\'s transcript when there is enough of it (a few hundred characters). Press "Ask Claude again" once the transcript has grown.')) + '. Promote the ones that land straight onto the board.</p></div>' +
       '<div class="row fac"><button class="btn btn--ghost btn--sm" data-action="regen">Ask Claude again</button><button class="btn btn--ghost btn--sm" data-action="reseal">Re-seal</button></div></div>';
     html += '<div class="grid grid--2" data-sc-in data-sc-stagger="70">';
     ideas.forEach(function (i) {
@@ -715,7 +788,7 @@
       '<button data-action="src-mic" aria-pressed="' + (src === 'mic') + '">Browser mic<small>Chrome speech recognition. Free, rough, live.</small></button>' +
       '<button data-action="src-wispr" aria-pressed="' + (src === 'wispr') + '"' + (CAP.mcp ? '' : ' disabled') + '>Wispr Flow meeting<small>' + (CAP.mcp ? 'Polls the meeting recorder transcript via the connector.' : 'Needs the Artifact build with the Wispr Flow connector.') + '</small></button>' +
       '<button data-action="src-feed" aria-pressed="' + (src === 'feed') + '">JSON feed URL<small>A Claude Code or Cowork session writes ideas to a file; this polls it.</small></button>' +
-      '<button data-action="src-demo" aria-pressed="' + (src === 'demo') + '">Demo transcript<small>Eight voices, one every nine seconds. Test the loop.</small></button></div>' +
+      (CFG.demoTranscript && CFG.demoTranscript.length ? '<button data-action="src-demo" aria-pressed="' + (src === 'demo') + '">Demo transcript<small>Eight voices, one every nine seconds. Test the loop.</small></button>' : '') + '</div>' +
       '<label class="field">Paste the transcript here (the whole thing each time is fine: only the new part is added). Wispr Flow dictation works here too. Ctrl or Cmd + Enter to add.<textarea id="manualBox" placeholder="Paste from the live notes, or dictate…"></textarea></label>' +
       '<div class="row"><button class="btn" data-action="addmanual">Add to transcript</button><button class="btn btn--primary" data-action="extract">Read now</button><label class="check"><input type="checkbox" id="autoExtract"' + (S.settings.autoExtract ? ' checked' : '') + '> Auto-read every ' + S.settings.pollSec + 's</label></div>' +
       '<div class="log" id="liveLog"></div></div>' +
@@ -774,14 +847,24 @@
         '<label class="field">Tell us a bit more (optional)<textarea id="f_pain" placeholder="How often, how long, what goes wrong"></textarea></label>' +
         '<label class="field">What would you want Claude to do? (optional)<textarea id="f_direction"></textarea></label>';
       $('#sheetDelete').hidden = true;
+    } else if (kind === 'phase') {
+      var ph = id ? CFG.phases.filter(function (x) { return x.id === id; })[0] : { id: '', fn: CFG.functionsTags[0], name: '', what: '', prompts: [] };
+      if (!ph) return;
+      title.textContent = id ? 'Edit phase' : 'New phase';
+      body.innerHTML = '<label class="field">Phase name<input id="f_name" value="' + esc(ph.name) + '" placeholder="Month-end close"></label>' +
+        '<label class="field">Team<select id="f_fn">' + CFG.functionsTags.map(function (x) { return '<option' + (x === ph.fn ? ' selected' : '') + '>' + esc(x) + '</option>'; }).join('') + '</select></label>' +
+        '<label class="field">What happens in it (one line, the room sees this)<input id="f_what" value="' + esc(ph.what || '') + '"></label>' +
+        '<label class="field">Questions to ask (one per line, facilitator only)<textarea id="f_prompts">' + esc((ph.prompts || []).join('\n')) + '</textarea></label>';
+      $('#sheetDelete').hidden = !id;
     } else if (kind === 'op') {
-      var o = id ? findOp(id) : { id: '', title: '', fn: 'Both', phase: CFG.phases[0].name, cluster: '', surface: 'Skill', build: 'Skill', pain: '', direction: '', systems: [], quote: '', raisedBy: '', owner: '', notes: '', status: 'Open' };
+      var o = id ? findOp(id) : { id: '', title: '', fn: CFG.functionsTags[0] || 'Both', phase: CFG.phases[0] ? CFG.phases[0].name : '', cluster: '', surface: 'Skill', build: 'Skill', pain: '', direction: '', systems: [], quote: '', raisedBy: '', owner: '', notes: '', status: 'Open' };
       if (!o) return;
       title.textContent = id ? 'Edit ' + id : 'New opportunity';
       var opt = function (list, v) { return list.map(function (x) { return '<option' + (x === v ? ' selected' : '') + '>' + esc(x) + '</option>'; }).join(''); };
       body.innerHTML = '<label class="field">Title<input id="f_title" value="' + esc(o.title) + '"></label>' +
         '<div class="field-row"><label class="field">Function<select id="f_fn">' + opt(CFG.functionsTags, o.fn) + '</select></label><label class="field">Status<select id="f_status">' + opt(CFG.statuses, o.status) + '</select></label></div>' +
-        '<label class="field">Process phase<select id="f_phase">' + opt(CFG.phases.map(function (p) { return p.name; }), o.phase) + '</select></label>' +
+        (CFG.phases.length ? '<label class="field">Process phase<select id="f_phase">' + opt(CFG.phases.map(function (p) { return p.name; }).concat(o.phase && !CFG.phases.some(function (p) { return p.name === o.phase; }) ? [o.phase] : []), o.phase) + '</select></label>'
+          : '<label class="field">Process phase (free text until phases are added in the Process walk)<input id="f_phase" value="' + esc(o.phase) + '"></label>') +
         '<div class="field-row"><label class="field">Claude surface<select id="f_surface">' + opt(CFG.surfaces.map(function (s) { return s.key; }), o.surface) + '</select></label><label class="field">Build<select id="f_build">' + opt(CFG.buildTypes, o.build) + '</select></label></div>' +
         '<label class="field">Pain, in their words<textarea id="f_pain">' + esc(o.pain) + '</textarea></label>' +
         '<label class="field">What Claude does (input and output)<textarea id="f_direction">' + esc(o.direction) + '</textarea></label>' +
@@ -806,7 +889,7 @@
     if (SHEET.kind === 'idea') {
       if (!v('f_title')) { toast('Give it a title'); return; }
       var name = (SB.user && (SB.user.user_metadata && SB.user.user_metadata.display_name)) || (SB.user && SB.user.email && SB.user.email.split('@')[0]) || 'Participant';
-      addOpportunity({ title: v('f_title'), function: v('f_fn'), pain: v('f_pain'), direction: v('f_direction'), raisedBy: name, phase: 'Data foundations', surface: 'Claude Chat', build: 'Skill', confidence: 'Medium' }, 'Participant');
+      addOpportunity({ title: v('f_title'), function: v('f_fn'), pain: v('f_pain'), direction: v('f_direction'), raisedBy: name, phase: '', surface: 'Claude Chat', build: 'Skill', confidence: 'Medium' }, 'Participant');
       closeSheet(); toast('On the board'); return;
     }
     if (SHEET.kind === 'op') {
@@ -817,6 +900,12 @@
         Object.assign(o, { title: data.title, fn: data.function, status: data.status, phase: data.phase, surface: data.surface, build: data.build, pain: data.pain, direction: data.direction, systems: data.systems.split(',').map(function (x) { return x.trim(); }).filter(Boolean), cluster: data.cluster, raisedBy: data.raisedBy, owner: data.owner, quote: data.quote, notes: data.notes });
         pushOp(o, ['title', 'fn', 'status', 'phase', 'surface', 'build', 'pain', 'direction', 'systems', 'cluster', 'raisedBy', 'owner', 'quote', 'notes']);
       } else { addOpportunity(data, 'Room'); }
+    } else if (SHEET.kind === 'phase') {
+      var pd = { name: v('f_name'), fn: v('f_fn'), what: v('f_what'), prompts: v('f_prompts').split('\n').map(function (x) { return x.trim(); }).filter(Boolean) };
+      if (!pd.name) { toast('A name is needed'); return; }
+      if (SHEET.id) { var cur = CFG.phases.filter(function (x) { return x.id === SHEET.id; })[0]; if (cur) { var oldName = cur.name; Object.assign(cur, pd); if (oldName !== pd.name) S.opportunities.forEach(function (o) { if (o.phase === oldName) { o.phase = pd.name; pushOp(o, ['phase']); } }); } }
+      else CFG.phases.push(Object.assign({ id: 'p' + uid() }, pd));
+      savePhases();
     } else {
       var sd = { name: v('f_name'), category: v('f_category'), usedBy: v('f_usedBy'), connector: v('f_connector'), note: v('f_note') };
       if (!sd.name) { toast('A name is needed'); return; }
@@ -827,7 +916,8 @@
     save(); closeSheet(); render(); updateBadge();
   }
   function deleteSheet() {
-    if (SHEET.kind === 'op') { if (!confirm('Delete ' + SHEET.id + '? Consider Parked instead; deleted ideas leave no trace.')) return; var dop = findOp(SHEET.id); if (dop && SBA() && dop.uid) SB.deleteOpportunity(dop.uid).catch(function () {}); S.opportunities = S.opportunities.filter(function (o) { return o.id !== SHEET.id; }); }
+    if (SHEET.kind === 'phase') { if (!confirm('Remove this phase? Ideas on it keep their phase name and show under "Not yet placed".')) return; CFG.phases = CFG.phases.filter(function (x) { return x.id !== SHEET.id; }); savePhases(); }
+    else if (SHEET.kind === 'op') { if (!confirm('Delete ' + SHEET.id + '? Consider Parked instead; deleted ideas leave no trace.')) return; var dop = findOp(SHEET.id); if (dop && SBA() && dop.uid) SB.deleteOpportunity(dop.uid).catch(function () {}); S.opportunities = S.opportunities.filter(function (o) { return o.id !== SHEET.id; }); }
     else { var dsys = S.systems.filter(function (x) { return x.id === SHEET.id; })[0]; if (dsys && SBA() && dsys.uid) SB.deleteSystem(dsys.uid).catch(function () {}); S.systems = S.systems.filter(function (s) { return s.id !== SHEET.id; }); }
     save(); closeSheet(); render(); updateBadge();
   }
@@ -853,7 +943,7 @@
     var ws4 = XLSX.utils.json_to_sheet(CFG.phases.map(function (p) { return { Phase: p.name, Function: p.fn, 'What happens': p.what, '# opportunities': opCountFor(p.name).length }; }));
     ws4['!cols'] = [34, 11, 70, 14].map(function (w) { return { wch: w }; });
     XLSX.utils.book_append_sheet(wb, ws4, 'Lifecycle Map');
-    var ws5 = XLSX.utils.aoa_to_sheet([['AI opportunity workshop: ' + CFG.client.name + ' Finance and Purchasing'], ['Exported', new Date().toLocaleString('en-AU', { timeZone: 'Australia/Melbourne' })], ['North star', CFG.client.northStar], ['Scope criterion', CFG.client.scopeCriterion], [], ['Tabs', 'Opportunity Register (client-raised and AI-heard), New Ideas (the second viewpoint), Systems, Lifecycle Map'], ['Scoring', 'Client owns Value; consultant owns Ease. Fill the two columns in the register, then build the 2x2 in the prioritisation session.']]);
+    var ws5 = XLSX.utils.aoa_to_sheet([['AI opportunity workshop: ' + CFG.client.name + ', ' + teamsSentence()], ['Exported', new Date().toLocaleString('en-AU', { timeZone: 'Australia/Melbourne' })], ['North star', CFG.client.northStar], ['Scope criterion', CFG.client.scopeCriterion], [], ['Tabs', 'Opportunity Register (client-raised and AI-heard), New Ideas (the second viewpoint), Systems, Lifecycle Map'], ['Scoring', 'Client owns Value; consultant owns Ease. Fill the two columns in the register, then build the 2x2 in the prioritisation session.']]);
     ws5['!cols'] = [{ wch: 18 }, { wch: 100 }];
     XLSX.utils.book_append_sheet(wb, ws5, 'Read Me');
     var out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
@@ -956,7 +1046,12 @@
       case 'reveal': S.revealed = true; UI.seq++; save(); render(); updateBadge(); if (SBA()) SB.updateWorkshop({ revealed: true }).catch(function () {}); generateSecond().then(function () { UI.seq++; if (UI.view === 'second') render(); }); break;
       case 'regen': generateSecond().then(function () { UI.seq++; if (UI.view === 'second') render(); }); break;
       case 'reseal': S.revealed = false; save(); render(); updateBadge(); if (SBA()) SB.updateWorkshop({ revealed: false }).catch(function () {}); break;
-      case 'copylink': copyText(participantLink()); break;
+      case 'copylink': copyText(joinLink()); break;
+      case 'copylinkfor': copyText(joinLinkFor(b.dataset.slug, b.dataset.code)); break;
+      case 'addphase': openSheet('phase', null); break;
+      case 'editphase': openSheet('phase', b.dataset.id); break;
+      case 'adoptphase': CFG.phases.push({ id: 'p' + uid(), fn: CFG.functionsTags.indexOf(b.dataset.fn) >= 0 ? b.dataset.fn : CFG.functionsTags[0], name: b.dataset.name, what: '', prompts: [] }); savePhases(); render(); toast('Phase added'); break;
+      case 'startblank': startBlank(); break;
       case 'bigqr': showBigQr(); break;
       case 'closeqr': hideBigQr(); break;
       case 'sendlink': authSendLink(); break;
@@ -998,9 +1093,26 @@
 
   /* ------------------------------------------------------ backend glue -- */
   function participantLink() { return location.origin + location.pathname + '?w=' + encodeURIComponent(SB.ws ? SB.ws.slug : ''); }
+  /* The join link is the QR code as text: workshop plus code. Anyone who
+     opens it types a name and is in. It is shown and copied wherever the
+     code is already visible, so it exposes nothing the room cannot see. */
+  function joinLinkFor(slug, code) { return location.origin + location.pathname + '?w=' + encodeURIComponent(slug || '') + '&code=' + encodeURIComponent(code || ''); }
+  /* Persist the phases of the open workshop. In server mode they live in the
+     workshop's config column; locally they stay in memory for this session. */
+  function savePhases() {
+    if (!SBA()) { save(); return; }
+    var c = Object.assign({}, SB.ws.config || {}); c.phases = CFG.phases;
+    SB.updateWorkshop({ config: c }).catch(function () {});
+  }
+  function startBlank() {
+    if (!SBA() || SB.role !== 'facilitator') return;
+    if (!confirm('Start this workshop blank? Removes every system, every process phase and every prepared second viewpoint idea from this workshop. Opportunities, votes and the transcript stay. This cannot be undone.')) return;
+    var c = Object.assign({}, SB.ws.config || {}); c.phases = []; c.systems = []; c.blindSpots = [];
+    SB.clearPrepared(c).then(function () { CFG.phases = []; CFG.blindSpots = []; S.systems = []; toast('Blank slate. Add systems and phases before the day.'); render(); }).catch(function () {});
+  }
   /* The QR carries the join code too, so a scan lands straight on the name
      prompt. The code is on the same screen as the QR, so nothing is leaked. */
-  function joinLink() { return participantLink() + '&code=' + encodeURIComponent(SB.ws ? SB.ws.join_code : ''); }
+  function joinLink() { return joinLinkFor(SB.ws ? SB.ws.slug : '', SB.ws ? SB.ws.join_code : ''); }
   function qrSvg(text) {
     if (!window.qrcode) return '';
     try { var q = qrcode(0, 'M'); q.addData(text); q.make(); return q.createSvgTag({ cellSize: 4, margin: 0, scalable: true }); } catch (e) { return ''; }
@@ -1008,7 +1120,7 @@
   function showBigQr() {
     hideBigQr();
     var d = document.createElement('div'); d.className = 'qrbig'; d.id = 'qrbig';
-    d.innerHTML = '<div class="qrbig__card"><div class="qrbig__qr">' + qrSvg(joinLink()) + '</div><div class="qrbig__side"><div class="k">Scan with your phone camera</div><div class="qrbig__url">' + esc(participantLink()) + '</div><div class="k">Code</div><div class="joincard__code">' + esc(SB.ws ? SB.ws.join_code : '') + '</div><button class="btn" data-action="closeqr">Close</button></div></div>';
+    d.innerHTML = '<div class="qrbig__card"><div class="qrbig__qr">' + qrSvg(joinLink()) + '</div><div class="qrbig__side"><div class="k">Scan with your phone camera, or open the link</div><div class="qrbig__url">' + esc(joinLink()) + '</div><div class="k">Code</div><div class="joincard__code">' + esc(SB.ws ? SB.ws.join_code : '') + '</div><button class="btn" data-action="closeqr">Close</button></div></div>';
     d.addEventListener('click', function (e) { if (e.target === d) hideBigQr(); });
     document.body.appendChild(d);
   }
@@ -1023,7 +1135,8 @@
   function applyData(p) {
     if (p.workshop) {
       var w = p.workshop;
-      CFG = Object.assign({}, SEED, w.config || {});
+      CFG = Object.assign({}, SEED, BLANK, w.config || {});
+      if (!Array.isArray(CFG.phases)) CFG.phases = [];
       if (!CFG.blindSpots || p.second) CFG.blindSpots = CFG.blindSpots || [];
       $('#brandClient').textContent = (CFG.client && CFG.client.name) || w.title;
       S.agendaIdx = typeof w.current_block === 'number' ? w.current_block : -1;
@@ -1109,11 +1222,12 @@
     var h = '<div class="card stack"><h3>Account</h3><div class="kv"><span class="k">Signed in</span><span>' + esc(SB.user.email || 'guest (no email)') + '</span><span class="k">Role</span><span>' + esc(SB.role || 'no workshop open') + '</span></div><div class="row"><button class="btn btn--ghost btn--sm" data-action="signout">Sign out</button></div></div>';
     if (w && SB.role === 'facilitator') {
       h += '<div class="card stack"><h3>This workshop: ' + esc(w.title) + '</h3>' +
-        '<div class="kv"><span class="k">Participant link</span><span><code>' + esc(participantLink()) + '</code> <button class="btn btn--sm" data-action="copylink">Copy</button></span>' +
-        '<span class="k">Join code</span><span><b>' + esc(w.join_code) + '</b></span>' +
+        '<div class="kv"><span class="k">Join link</span><span><code>' + esc(joinLink()) + '</code> <button class="btn btn--sm" data-action="copylink" data-tip="The QR code as a link: send it by email or Teams to anyone joining from their desk. They open it, type a name and are in. Same code as on the screen.">Copy</button></span>' +
+        '<span class="k">Join code</span><span><b>' + esc(w.join_code) + '</b> <span class="small muted">(inside the link; needed only if someone opens the bare site address)</span></span>' +
         '<span class="k">Dots per person</span><span>' + w.max_dots + '</span>' +
         '<span class="k">Bridge token</span><span><code id="bridgeToken">hidden</code> <button class="btn btn--sm btn--ghost" data-action="showtoken" data-tip="Reveals the secret a Claude Code or Cowork session uses to post transcript and ideas into this workshop through /api/ingest. See docs/WISPR-BRIDGE.md.">Show</button> <button class="btn btn--sm btn--ghost" data-action="copytoken">Copy</button></span>' +
-        '<span class="k">Workshop id</span><span><code>' + esc(w.id) + '</code></span></div>' +
+        '<span class="k">Workshop id</span><span><code>' + esc(w.id) + '</code></span>' +
+        '<span class="k">Prepared content</span><span>' + S.systems.length + ' systems, ' + CFG.phases.length + ' phases, ' + CFG.blindSpots.length + ' prepared second viewpoint ideas <button class="btn btn--sm btn--ghost" data-action="startblank" data-tip="Wipes the systems, phases and prepared second viewpoint ideas from this workshop so it carries nothing from a template or another client. Opportunities, votes and transcript stay.">Start blank</button></span></div>' +
         '<div id="membersList" class="small muted">Loading members…</div></div>';
     }
     h += '<div class="card stack" id="adminCard"><h3>Workshops</h3><div id="wsList" class="small muted">Loading…</div>' +
@@ -1121,8 +1235,9 @@
       '<div class="field-row"><label class="field">Organisation<select id="n_org"><option value="">New organisation…</option></select></label><label class="field">New organisation name<input id="n_orgname" placeholder="Watches of Switzerland"></label></div>' +
       '<div class="field-row"><label class="field">Workshop title<input id="n_title" placeholder="Finance and Purchasing ideation"></label><label class="field">Client name shown on the board<input id="n_client" placeholder="Watches of Switzerland"></label></div>' +
       '<div class="field-row"><label class="field">Teams in the room (comma separated)<input id="n_fns" value="Finance, Purchasing"></label><label class="field">Join code<input id="n_code" value="' + esc(String(Math.floor(1000 + Math.random() * 9000))) + '"></label><label class="field">Dots per person<input id="n_dots" type="number" value="3" min="1" max="10"></label></div>' +
+      '<label class="field">About the client (one line for Claude: industry, size, anything that frames the ideas)<input id="n_about" placeholder="Luxury watch and jewellery retailer, UK listed, 8 people in the room"></label>' +
       '<label class="field">North star<input id="n_north" value="' + esc(SEED.client.northStar) + '"></label><label class="field">Scope test<input id="n_scope" value="' + esc(SEED.client.scopeCriterion) + '"></label>' +
-      '<p class="small muted">Phases, run sheet, question bank, systems and the twelve prepared blind spots are copied from the Watches of Switzerland template. Edit them afterwards in the board.</p>' +
+      '<p class="small muted">A new workshop is a blank slate: no systems, no process phases, no prepared second viewpoint ideas. Add systems and phases in the board before the day. The run sheet gets one process walk block per team. When it is created you land on the Run sheet with the QR code and the join link for this workshop.</p>' +
       '<div class="row"><button class="btn btn--primary" data-action="createws">Create workshop</button></div></div></details></div>';
     return h;
   }
@@ -1131,21 +1246,52 @@
     Promise.all([SB.listOrgs(), SB.listWorkshops()]).then(function (r) {
       var orgs = r[0], wss = r[1], sel = $('#n_org'), list = $('#wsList');
       if (sel) sel.innerHTML = '<option value="">New organisation…</option>' + orgs.map(function (o) { return '<option value="' + esc(o.id) + '">' + esc(o.name) + '</option>'; }).join('');
-      if (list) list.innerHTML = wss.length ? '<table class="reg" style="min-width:0"><thead><tr><th>Workshop</th><th>Organisation</th><th>Code</th><th></th></tr></thead><tbody>' + wss.map(function (w) { var o = orgs.filter(function (x) { return x.id === w.org_id; })[0]; return '<tr><td>' + esc(w.title) + '</td><td>' + esc(o ? o.name : '') + '</td><td>' + esc(w.join_code) + '</td><td><button class="btn btn--sm" data-action="openws" data-slug="' + esc(w.slug) + '">Open</button></td></tr>'; }).join('') + '</tbody></table>' : 'No workshops yet. Create one below.';
+      if (list) list.innerHTML = wss.length ? '<table class="reg" style="min-width:0"><thead><tr><th>Workshop</th><th>Organisation</th><th>Code</th><th>Join link</th><th></th></tr></thead><tbody>' + wss.map(function (w) { var o = orgs.filter(function (x) { return x.id === w.org_id; })[0]; return '<tr><td>' + esc(w.title) + '</td><td>' + esc(o ? o.name : '') + '</td><td>' + esc(w.join_code) + '</td><td><code class="small">' + esc(joinLinkFor(w.slug, w.join_code)) + '</code> <button class="btn btn--sm btn--ghost" data-action="copylinkfor" data-slug="' + esc(w.slug) + '" data-code="' + esc(w.join_code) + '">Copy</button></td><td><button class="btn btn--sm" data-action="openws" data-slug="' + esc(w.slug) + '">Open</button></td></tr>'; }).join('') + '</tbody></table>' : 'No workshops yet. Create one below.';
     }).catch(function (e) { log('admin: ' + (e.message || e)); });
     if (SB.ws && SB.role === 'facilitator') SB.members().then(function (ms) {
       var el = $('#membersList'); if (!el) return;
       el.innerHTML = '<b>' + ms.length + ' member' + (ms.length === 1 ? '' : 's') + '</b>: ' + ms.map(function (m) { return esc(m.display_name || m.email || '?') + ' (' + m.role + ')'; }).join(', ');
     });
   }
+  /* A new workshop's config: the client's own words plus generic vocabulary.
+     Nothing from data/seed.js that describes a particular client (systems,
+     phases, blind spots, demo transcript) is copied. The run sheet is built
+     from the teams named in the form. */
+  function blankConfig(f) {
+    var fns = (f.functions || []).filter(Boolean); if (!fns.length) fns = ['Team'];
+    var tags = fns.slice(); if (fns.length > 1) tags.push('Both'); tags.push('Org-wide');
+    var walkMins = 30, per = Math.max(5, Math.round(walkMins / fns.length));
+    var agenda = [
+      { id: 'a1', mins: 5, title: 'Frame the session', view: 'runsheet',
+        say: 'We are here to find where Claude gives you hours back. Not to replace anyone. Every idea you raise lands on that board and you will see the count grow. At the end I will show you a second list: things we saw that you did not raise.',
+        ask: ['Confirm the north star: ' + (f.northStar || SEED.client.northStar) + '. Does that sit right?', 'One rule for scope: if Claude cannot carry the core of it, it is parked, not dropped.'] },
+      { id: 'a2', mins: 10, title: 'Map the systems', view: 'systems',
+        say: 'Before we talk about work, tell me what you touch. Correct anything on the screen and add what is missing.',
+        ask: ['Which of these do you open every day?', 'Which two do you copy between most?', 'What is missing from this list?', 'Which system do you trust least?'] }
+    ];
+    fns.forEach(function (fn, i) {
+      agenda.push({ id: 'w' + (i + 1), mins: per, title: 'Walk the ' + fn + ' process', view: 'process',
+        say: (i === 0 ? fn + ' first. ' : 'Now ' + fn + '. ') + 'Phase by phase. I want how it actually happens, not the policy.' + (i > 0 ? ' Everyone else, listen for where their pain is your pain.' : ''),
+        ask: ['What happens, who owns it, how often, how long, what tool?', 'Where does the same thing get typed twice?', 'What is the drop-everything task?', 'What do you produce every month that looks the same each time?'] });
+    });
+    agenda.push(
+      { id: 'a5', mins: 5, title: 'Pause and catch up', view: 'opportunities', say: 'Stretch. While you do, the board catches up. I will tidy titles and tag teams.', ask: ['Facilitator: merge duplicates, fix team tags, park anything out of scope with a reason.'] },
+      { id: 'a6', mins: 20, title: 'Validate, cluster, vote', view: 'opportunities', say: 'Here is everything we heard. For each one: is the pain real, is the direction right. Then three dots each.', ask: ['Which team does this belong to, or is it the whole business?', 'Who feels this most?', 'Which one would you hand over tomorrow if you trusted it?', 'Watch for convergence: three people raising the same thing unprompted.'] },
+      { id: 'a7', mins: 10, title: 'The second viewpoint', view: 'second', say: 'These are the things we saw from outside, written from what you said today. For each one I will tell you why I think it did not come up.', ask: ['Which of these is obviously right?', 'Which one makes you uncomfortable, and why?', 'Which is already being done somewhere you know of?'] },
+      { id: 'a8', mins: 10, title: 'Commit and export', view: 'opportunities', say: 'Top five by votes. An owner for each. The first build starts this week.', ask: ['Who owns each of the top five?', 'What is the first skill we write together?', 'Export the register and send it to the room today.'] }
+    );
+    return {
+      client: { name: f.client, short: f.client, functions: fns, headcount: 0, about: f.about || '', northStar: f.northStar || SEED.client.northStar, scopeCriterion: f.scopeCriterion || SEED.client.scopeCriterion, aiPlatform: SEED.client.aiPlatform },
+      functionsTags: tags, surfaces: SEED.surfaces, buildTypes: SEED.buildTypes, statuses: SEED.statuses, questionBank: SEED.questionBank,
+      agenda: agenda, systems: [], phases: [], blindSpots: [], demoTranscript: []
+    };
+  }
   function adminCreateWorkshop() {
     var v = function (id) { var el = $('#' + id); return el ? el.value.trim() : ''; };
     var title = v('n_title'), client = v('n_client') || title; if (!title) { toast('Give the workshop a title'); return; }
     var slugify = function (t) { return t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) + '-' + Math.random().toString(36).slice(2, 6); };
     var fns = v('n_fns').split(',').map(function (x) { return x.trim(); }).filter(Boolean);
-    var cfg = JSON.parse(JSON.stringify(SEED));
-    cfg.client = Object.assign({}, SEED.client, { name: client, short: client, functions: fns, northStar: v('n_north') || SEED.client.northStar, scopeCriterion: v('n_scope') || SEED.client.scopeCriterion });
-    var tags = fns.concat(['Both', 'Org-wide']); cfg.functionsTags = tags;
+    var cfg = blankConfig({ client: client, functions: fns, about: v('n_about'), northStar: v('n_north'), scopeCriterion: v('n_scope') });
     var orgP = v('n_org') ? Promise.resolve({ id: v('n_org') }) : (v('n_orgname') ? SB.createOrg(v('n_orgname'), slugify(v('n_orgname'))) : Promise.reject(new Error('Pick an organisation or name a new one')));
     orgP.then(function (org) { return SB.createWorkshop(org.id, { slug: slugify(title), title: title, joinCode: v('n_code') || '1234', maxDots: parseInt(v('n_dots'), 10) || 3 }, cfg); })
       .then(function (w) { toast('Created. Opening…'); location.href = location.pathname + '?w=' + encodeURIComponent(w.slug); })

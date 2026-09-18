@@ -12,7 +12,7 @@
      SB.openWorkshop(slug)     -> { ok } | { error: 'join' | message }
      SB.user, SB.role, SB.ws, SB.active
      writes: insertOpportunity, updateOpportunity, deleteOpportunity, vote,
-             insertSystem, updateSystem, deleteSystem, updateWorkshop,
+             insertSystem, updateSystem, deleteSystem, updateWorkshop, clearPrepared,
              addTranscript, setAIIdeas, api(mode, prompt)
      admin:  listOrgs, createOrg, listWorkshops, createWorkshop, members,
              bridgeToken, sendLink, joinAnonymously, isAnon, signOut
@@ -175,6 +175,16 @@ window.SB = (function () {
   async function insertSystem(s) { var r = await client.from('systems').insert({ workshop_id: ws.id, name: s.name, category: s.category || '', used_by: s.usedBy || '', connector: s.connector || '', status: s.status || 'assumed', note: s.note || '', sort: s.sort || 99 }); if (r.error) fail(r.error, 'Could not add'); refresh('systems'); }
   async function updateSystem(uid, s) { var r = await client.from('systems').update({ name: s.name, category: s.category || '', used_by: s.usedBy || '', connector: s.connector || '', status: s.status || 'assumed', note: s.note || '' }).eq('id', uid); if (r.error) fail(r.error, 'Could not save'); }
   async function deleteSystem(uid) { var r = await client.from('systems').delete().eq('id', uid); if (r.error) fail(r.error, 'Could not delete'); refresh('systems'); }
+  /* Blank slate for a workshop that was created from a template: drop its
+     systems and prepared (consultant) second viewpoint ideas, and write the
+     config without phases. Opportunities, votes, transcript and Claude's own
+     second viewpoint ideas are this workshop's and stay. */
+  async function clearPrepared(config) {
+    var r1 = await client.from('systems').delete().eq('workshop_id', ws.id); if (r1.error) fail(r1.error, 'Could not clear systems');
+    var r2 = await client.from('second_ideas').delete().eq('workshop_id', ws.id).eq('origin', 'consultant'); if (r2.error) fail(r2.error, 'Could not clear prepared ideas');
+    await updateWorkshop({ config: config });
+    refresh('systems'); refresh('second_ideas'); refresh('workshops');
+  }
   async function updateWorkshop(patch) { var r = await client.from('workshops').update(patch).eq('id', ws.id); if (r.error) fail(r.error, 'Could not save'); }
   async function addTranscript(text, src) { var r = await client.from('transcript_chunks').insert({ workshop_id: ws.id, text: text, src: src || 'manual' }); if (r.error) fail(r.error, 'Transcript not saved'); }
   async function setAIIdeas(list) {
@@ -182,8 +192,8 @@ window.SB = (function () {
     if (list.length) { var r = await client.from('second_ideas').insert(list.map(function (i, n) { return { workshop_id: ws.id, key: 'A' + (n + 1), title: i.title, fn: i.fn || i.function || 'Both', phase: i.phase || '', surface: i.surface || '', build: i.build || '', what: i.what || '', why: i.why || '', lift: i.lift || '', comparator: i.comparator || '', confidence: i.confidence || 'Medium', origin: 'ai', sort: n + 1 }; })); if (r.error) fail(r.error, 'Ideas not saved'); }
     refresh('second_ideas');
   }
-  async function api(mode, prompt) {
-    var r = await fetch('/api/extract', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + session.access_token }, body: JSON.stringify({ workshopId: ws.id, prompt: prompt, mode: mode }) });
+  async function api(mode, prompt, extra) {
+    var r = await fetch('/api/extract', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + session.access_token }, body: JSON.stringify(Object.assign({ workshopId: ws.id, prompt: prompt, mode: mode }, extra || {})) });
     var j = await r.json();
     if (!r.ok) throw { code: 'http_' + r.status, message: j.error || r.statusText };
     return j;
@@ -214,7 +224,7 @@ window.SB = (function () {
     get user() { return user; }, get role() { return role; }, get ws() { return ws; }, get org() { return org; }, get active() { return active; }, get cfg() { return cfg; }, get myDots() { return myDots; },
     sendLink: sendLink, signOut: signOut, openWorkshop: openWorkshop, joinWithCode: joinWithCode, joinAnonymously: joinAnonymously, isAnon: isAnon, refreshAll: refreshAll,
     insertOpportunity: insertOpportunity, updateOpportunity: updateOpportunity, deleteOpportunity: deleteOpportunity, vote: vote,
-    insertSystem: insertSystem, updateSystem: updateSystem, deleteSystem: deleteSystem, updateWorkshop: updateWorkshop,
+    insertSystem: insertSystem, updateSystem: updateSystem, deleteSystem: deleteSystem, updateWorkshop: updateWorkshop, clearPrepared: clearPrepared,
     addTranscript: addTranscript, setAIIdeas: setAIIdeas, api: api,
     listOrgs: listOrgs, createOrg: createOrg, listWorkshops: listWorkshops, createWorkshop: createWorkshop, members: members, bridgeToken: bridgeToken, myVotesUsed: myVotesUsed
   };

@@ -34,7 +34,7 @@ Sign-in: facilitators use an emailed magic link. Participants sign in anonymousl
 
 | Item | State |
 |---|---|
-| Live site | Serves `main` at commit `c035162` or later. Sidebar reads "AI ready". |
+| Live site | Serves `main`. Sidebar reads "AI ready". |
 | Users | `max.einsohn@acquire.ai` facilitator of org "Watches of Switzerland" (workshop "Finance and Purchasing Ideation Workshop", code 2469, clean). `acquire@watchswiss.com` facilitator of org "Watches of Switzerland Test" (workshop code 3499, used for testing, has transcript and ideas). One anonymous participant user from the phone test. |
 | Proven on the live site today | Magic-link sign-in. Org and workshop creation. QR scan → name → in, on a real phone. Transcript paste → Read now → ideas on the board. Dot voting. Second viewpoint reveal. |
 | Not yet proven | Two phones voting at once with totals moving live on the laptop. Excel export from the live site. Re-seal. The Wispr bridge route (`/api/ingest`). |
@@ -54,6 +54,20 @@ Sign-in: facilitators use an emailed magic link. Participants sign in anonymousl
 **Second viewpoint survives data refreshes.** Every realtime refresh rebuilt the view's DOM while the scroll engine drove the old nodes, so scrolling back up showed blank copy. The revealed view now re-renders only when its content signature changes, and the engine gained `destroy()` so a remount does not leave a dead instance ticking. Opening the view lands on the pinned stage (so a phone does not see empty canvas), the opening screen is lit at rest with the real count, and a "Scroll down" pill sits at the bottom until the reader moves.
 
 **Production moved to `main`.** Two branches both claiming to be production caused the "AI off" confusion (a preview domain without the key). One production branch ends that.
+
+## Changed on 18 September, afternoon session (blank slate, join link, live systems and phases)
+
+**Every new workshop is a blank slate.** Creating a workshop no longer deep-copies `data/seed.js`. The config it stores has the client's own words (name, teams, an optional one-line "about" for Claude, north star, scope test), generic vocabulary (surfaces, build types, statuses, question bank), a run sheet generated with one process walk block per team, and empty `systems`, `phases`, `blindSpots` and `demoTranscript`. The database trigger seeds nothing from empty arrays. On load the page merges `SEED`, then a blank baseline, then the workshop config, so a backend workshop can never inherit WoS content by omission. The three workshops that existed before this change (codes 2469, 3499, 1775) still carry the WoS template; **Settings → This workshop → Start blank** wipes their systems, phases and prepared ideas and keeps opportunities, votes, transcript and Claude's own second viewpoint ideas.
+
+**The join link is generated with the QR.** `?w=<slug>&code=<code>` is now shown as text on the join card, on the big QR screen, in Settings → This workshop, and per row in the Workshops list, each with Copy. It is the QR as text: open it, type a name, in.
+
+**Claude populates systems and phases live.** Each read of the transcript returns opportunities, plus systems the room named and process stages it described, both deduplicated by name against what the board already has. Systems land as "assumed"; phases land in the workshop config, so the Process walk grows as the room talks. The server schema (`api/extract.js`) takes the workshop's team tags from the request body instead of a hard-coded Finance/Purchasing list, so other clients' team names work.
+
+**Phases are editable in the board.** Process walk → Add a phase, Edit phase, delete. Renaming a phase moves its ideas. Ideas whose phase matches no card show under "Not yet placed on a phase" with a one-press "Make this a phase". The opportunity sheet takes free-text phases until phases exist.
+
+**Second viewpoint for a blank workshop** is Claude's list only, written from this workshop's transcript and board; the prompt says so explicitly. Copy on the sealed screen and the header changed to match.
+
+Verified with Playwright against a stubbed backend and a stubbed Claude reply (scripts in the session scratchpad, not the repo): creation config, run sheet blocks, join link text, empty states, a read adding one system and one phase and deduplicating existing ones, Start blank. Not yet run against the live Supabase project: create a fresh workshop on the live site and confirm the Systems and Process walk views are empty.
 
 ## Dead ends, so the next session does not repeat them
 
@@ -81,7 +95,8 @@ To make the colleague a facilitator instead: they sign in by email on the bare s
 ## Next steps, in order
 
 1. Colleague test above.
-2. Fix `SUPABASE_SERVICE_ROLE_KEY` on Vercel and redeploy (only matters for the Wispr bridge).
+2. Fix `SUPABASE_SERVICE_ROLE_KEY` on Vercel and redeploy (only matters for the Wispr bridge): Supabase → Project Settings → API Keys → Secret keys → Create new secret key → paste over the Vercel variable (all environments) → Redeploy. Exact steps in `docs/DEPLOY.md` section 2.
+2a. Create a fresh workshop on the live site and confirm it opens empty (no systems, no phases, second viewpoint sealed with the Claude-only copy). Press Start blank on the three older workshops if they are to be reused for other clients.
 3. Resend SMTP (`docs/DEPLOY.md` section 1), so facilitator sign-in on a new device is not capped at two an hour.
 4. Delete the `claude/trusting-feynman-qr5izj` branch on GitHub; it is history.
 5. Optional hardening before a larger room: a database rule limiting one anonymous membership per name per workshop, or a facilitator control to remove a participant.

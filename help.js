@@ -17,7 +17,7 @@ window.HELP = (function () {
     view: {
       runsheet: 'Your agenda for the 90 minutes. Start here. Each block has what to say and what to ask.',
       systems: 'The software the team uses. Confirm or correct it with the room in block 2.',
-      process: 'The Finance and Purchasing work, split into phases. Ideas get pinned to a phase so you can see where the pain clusters.',
+      process: 'Each team\'s work, split into phases. Add them before the day or let Claude add them as the room describes its process. Ideas get pinned to a phase so you can see where the pain clusters.',
       opportunities: 'The board. Every idea the room or Claude raised, with tags. Edit, vote and export from here.',
       second: 'Ideas from outside the room. Stays locked until you press Reveal in block 7.',
       live: 'Where the transcript comes in and where Claude reads it. Only you see this.',
@@ -59,7 +59,7 @@ window.HELP = (function () {
       emaillogin: 'Facilitators sign in by emailed link so their role sticks across devices.',
       signout: 'Sign out of the board on this device.',
       openws: 'Open this workshop on the board.',
-      createws: 'Create a new workshop from the template. You become its facilitator.',
+      createws: 'Create a new workshop as a blank slate: no systems, phases or prepared ideas from any other client. You become its facilitator and land on its QR code and join link.',
       showtoken: 'Reveal the bridge token for this workshop.',
       copytoken: 'Copy the bridge token.',
       dismissguide: 'Hide this starter card. The full guide stays under the How to use button.',
@@ -134,7 +134,7 @@ window.HELP = (function () {
     chipFn: {
       Finance: 'This idea belongs to the Finance team.',
       Purchasing: 'This idea belongs to the Purchasing team.',
-      Both: 'This idea needs both Finance and Purchasing.',
+      Both: 'This idea needs more than one of the teams in the room.',
       'Org-wide': 'This idea reaches the whole business, not just these two teams.'
     },
     chipStatus: {
@@ -251,7 +251,7 @@ window.HELP = (function () {
     { title: 'The tags on every hover', body: '<p>Hover anything and a note appears with a tag.</p><p><span class="tip__who tip__who--you">You</span> means facilitator only. The room never sees it, and it disappears in presentation mode.</p><p><span class="tip__who tip__who--room">Room</span> means the participants see it on the projector.</p><p><span class="tip__who tip__who--both">You and the room</span> means you press it while the room watches, for example Reveal or a vote.</p>' },
     { title: 'Before the day: a five-minute test', steps: ['Open Settings. The AI line in the sidebar should say ready. If it says off, paste an API key and save.', 'Open Live capture and press Demo transcript. Watch the Opportunities badge climb over the next few minutes.', 'Open Opportunities. Click a title and rename it. Press plus to vote. Press Export Excel and open the file.', 'Open Second viewpoint and press Reveal. Scroll down slowly.', 'Press Re-seal, then in Settings press Reset the whole board, so the real session starts clean.'] },
     { title: 'On the day', steps: ['Open Live capture and start your transcript source: Wispr Flow meeting, or dictation into the box.', 'Plug in the projector and press P for presentation mode.', 'Open Run sheet and press Start the session.', 'Follow the blocks. Press Next block when each one is done. The page moves to the right view for you.', 'Block 7: open Second viewpoint and press Reveal.', 'Block 8: open Opportunities and press Export Excel. Send the file to the room.'] },
-    { title: 'What the words mean', terms: [['Opportunity', 'One idea: a task Claude could carry. It has a title, a team, a phase, a surface, a build type and a status.'], ['Function', 'Which team it belongs to: Finance, Purchasing, Both, or Org-wide.'], ['Phase', 'Where in the process the idea sits, for example Accounts payable or Purchase orders. The Process walk view counts ideas per phase.'], ['Surface', 'Which part of Claude does the work: Chat, a Project, a Scheduled Task, Cowork, a Skill, or a Connector setup.'], ['Build type', 'What has to be made: a Skill, a Scheduled task, a Setup, a Project, or a Workflow redesign.'], ['Status', 'Open, Validated, Emerging, Parked or Merged. Hover any status tag for the meaning.'], ['Second viewpoint', 'Ideas from outside the room: twelve prepared in advance plus what Claude writes from today’s transcript. Each one says why the room did not raise it.'], ['Votes', 'Dot votes. Each person gets three in block 6. The list sorts by votes.'], ['Transcript source', 'Where the words come from: the Wispr Flow meeting, the laptop mic, dictation into the box, a JSON feed, or the demo.']] },
+    { title: 'What the words mean', terms: [['Opportunity', 'One idea: a task Claude could carry. It has a title, a team, a phase, a surface, a build type and a status.'], ['Function', 'Which team it belongs to: one of the teams named when the workshop was created, Both, or Org-wide.'], ['Phase', 'Where in the process the idea sits, for example Accounts payable or Purchase orders. The Process walk view counts ideas per phase.'], ['Surface', 'Which part of Claude does the work: Chat, a Project, a Scheduled Task, Cowork, a Skill, or a Connector setup.'], ['Build type', 'What has to be made: a Skill, a Scheduled task, a Setup, a Project, or a Workflow redesign.'], ['Status', 'Open, Validated, Emerging, Parked or Merged. Hover any status tag for the meaning.'], ['Second viewpoint', 'Ideas from outside the room: what Claude writes from today’s transcript, plus any prepared in advance for this workshop. Each one says why the room did not raise it.'], ['Votes', 'Dot votes. Each person gets three in block 6. The list sorts by votes.'], ['Transcript source', 'Where the words come from: the Wispr Flow meeting, the laptop mic, dictation into the box, a JSON feed, or the demo.']] },
     { title: 'Keys', terms: [['1 to 7', 'Switch views.'], ['Space', 'Start or pause the block clock.'], ['N', 'Next block.'], ['P', 'Presentation mode on or off.'], ['Esc', 'Close a panel.']] }
   ];
   var participantGuide = [

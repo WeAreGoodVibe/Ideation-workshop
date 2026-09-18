@@ -29,7 +29,7 @@ Three parts: the static page plus two small server functions on Vercel, the data
 |---|---|---|
 | `SUPABASE_URL` | Project URL | `/api/config`, `/api/extract`, `/api/ingest` |
 | `SUPABASE_ANON_KEY` | anon public key | `/api/config` (sent to the browser, safe) |
-| `SUPABASE_SERVICE_ROLE_KEY` | service_role key (legacy JWT) or a new-style `sb_secret_…` key | `/api/ingest` only (the transcript bridge). `/api/extract` checks the facilitator with the caller's own token and does not need it. Never sent to a browser. A wrong value here shows up as `supabase 401: Invalid API key` in the Live log of whichever route uses it. |
+| `SUPABASE_SERVICE_ROLE_KEY` | a secret key: **Project Settings → API Keys → Secret keys → Create new secret key** (`sb_secret_…`), or the legacy `service_role` JWT from the Legacy tab | `/api/ingest` only (the transcript bridge). `/api/extract` checks the facilitator with the caller's own token and does not need it. Never sent to a browser. The code sends an `sb_secret_` key on the `apikey` header only, as Supabase requires. A wrong value shows up as `supabase 401: Invalid API key` from `/api/ingest`. To fix: create a new secret key, paste it over the Vercel variable for Production, Preview and Development, then Deployments → latest → Redeploy. Functions only read variables at deploy time. |
 | `ANTHROPIC_API_KEY` | your key | `/api/extract`: the listening loop and the second viewpoint |
 | `ANTHROPIC_MODEL` | optional, default `claude-opus-5` | `/api/extract` |
 
@@ -39,7 +39,8 @@ Three parts: the static page plus two small server functions on Vercel, the data
 
 1. Open the site, enter your name and email, press **Email me a link**. Open the link.
 2. You land on Settings with no workshop. Under **Workshops → New workshop**: new organisation "Watches of Switzerland", title, client name, teams, join code. Create. You are its facilitator.
-3. The Run sheet now shows the join card: a QR code, the participant link and the code. Press **Show big** on the projector. Everyone in the room scans the square with their phone camera, types their name and lands on the Opportunities view with three dots to spend. No email. A phone that will not scan opens the link and types the code. Facilitators still sign in by emailed link so their role follows them between devices.
+3. The Run sheet now shows the join card: a QR code, the **join link** (the QR as text, workshop and code included) and the code. Press **Show big** on the projector. Everyone in the room scans the square with their phone camera, types their name and lands on the Opportunities view with three dots to spend. No email. Someone joining from their desk opens the join link instead: copy it from the join card, from Settings → This workshop, or from the Workshops list, and send it by email or Teams. Facilitators still sign in by emailed link so their role follows them between devices.
+4. A new workshop is a blank slate: no systems, no process phases, no prepared second viewpoint ideas, and a run sheet with one process walk block per team you named. Add systems and phases in the board before the day (Systems → Add a system; Process walk → Add a phase), or let Claude add the ones the room names while Live capture runs. A workshop created before this change still carries the Watches of Switzerland template: Settings → This workshop → **Start blank** removes it and keeps the workshop's own opportunities, votes and transcript.
 
 Roles: the person who creates an organisation is its facilitator. Everyone who joins through a code is a participant. To promote someone, in the Supabase table editor set their `org_members.role` to `facilitator`.
 
