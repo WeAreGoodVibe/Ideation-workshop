@@ -293,7 +293,7 @@ language sql stable security definer set search_path = public as $$
 $$;
 
 -- ------------------------------------------------------------------ view --
-create or replace view public.vote_tallies as
+create or replace view public.vote_tallies with (security_invoker = true) as
   select v.workshop_id, v.opportunity_id, sum(v.dots)::int as total, count(*)::int as voters,
          array_agg(coalesce(m.display_name, 'someone') order by m.display_name) as names
   from votes v
