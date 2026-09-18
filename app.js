@@ -526,7 +526,7 @@
         '<button class="btn btn--sm btn--ghost" data-action="dismissguide">Hide</button></div>';
     }
     if (SBA() && SB.ws) {
-      html += '<div class="card joincard" data-who="room" data-tip="Show this to the room in block 1. Everyone opens the link on their phone, enters their email and this code, and gets a sign-in link by email."><div><div class="k">Join on your phone</div><div class="joincard__url">' + esc(participantLink()) + '</div></div><div><div class="k">Code</div><div class="joincard__code">' + esc(SB.ws.join_code) + '</div></div><div class="fac"><button class="btn btn--sm" data-action="copylink">Copy link</button></div></div>';
+      html += '<div class="card joincard" data-who="room" data-tip="Show this to the room in block 1. Everyone scans the square with their phone camera, types their name and is in. No email, no password. The link and code are the fallback for a phone that will not scan."><div class="joincard__qr" data-action="bigqr" title="Show it big">' + qrSvg(joinLink()) + '</div><div><div class="k">Scan to join, or open the link</div><div class="joincard__url">' + esc(participantLink()) + '</div></div><div><div class="k">Code</div><div class="joincard__code">' + esc(SB.ws.join_code) + '</div></div><div class="fac stack"><button class="btn btn--sm" data-action="bigqr">Show big</button><button class="btn btn--sm btn--ghost" data-action="copylink">Copy link</button></div></div>';
     }
     html += '<div class="frame-strip">' +
       '<div class="frame-cell" data-tip="' + esc(HELP.tips.other.frameNorth) + '" data-who="both"><div class="k">North star</div><div class="v">' + esc(c.northStar) + '</div></div>' +
@@ -899,7 +899,7 @@
     });
 
     document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape') { closeSheet(); closeHelp(); return; }
+      if (e.key === 'Escape') { closeSheet(); closeHelp(); hideBigQr(); return; }
       if (e.target.matches('input,textarea,select,[contenteditable]') || $('#sheet').classList.contains('open') || $('#help').classList.contains('open')) return;
       var map = { '1': 'runsheet', '2': 'systems', '3': 'process', '4': 'opportunities', '5': 'second', '6': 'live', '7': 'settings' };
       if (map[e.key]) { if ((UI.present || MODE.role === 'participant') && (e.key === '1' || e.key === '6' || e.key === '7')) return; go(map[e.key]); }
@@ -929,8 +929,11 @@
       case 'regen': generateSecond().then(function () { UI.seq++; if (UI.view === 'second') render(); }); break;
       case 'reseal': S.revealed = false; save(); render(); updateBadge(); if (SBA()) SB.updateWorkshop({ revealed: false }).catch(function () {}); break;
       case 'copylink': copyText(participantLink()); break;
+      case 'bigqr': showBigQr(); break;
+      case 'closeqr': hideBigQr(); break;
       case 'sendlink': authSendLink(); break;
       case 'joincode': authJoin(); break;
+      case 'emaillogin': authScreen('login', SB.param('w'), 'email'); break;
       case 'signout': SB.signOut(); break;
       case 'openws': location.href = location.pathname + '?w=' + encodeURIComponent(b.dataset.slug); break;
       case 'createws': adminCreateWorkshop(); break;
@@ -967,6 +970,21 @@
 
   /* ------------------------------------------------------ backend glue -- */
   function participantLink() { return location.origin + location.pathname + '?w=' + encodeURIComponent(SB.ws ? SB.ws.slug : ''); }
+  /* The QR carries the join code too, so a scan lands straight on the name
+     prompt. The code is on the same screen as the QR, so nothing is leaked. */
+  function joinLink() { return participantLink() + '&code=' + encodeURIComponent(SB.ws ? SB.ws.join_code : ''); }
+  function qrSvg(text) {
+    if (!window.qrcode) return '';
+    try { var q = qrcode(0, 'M'); q.addData(text); q.make(); return q.createSvgTag({ cellSize: 4, margin: 0, scalable: true }); } catch (e) { return ''; }
+  }
+  function showBigQr() {
+    hideBigQr();
+    var d = document.createElement('div'); d.className = 'qrbig'; d.id = 'qrbig';
+    d.innerHTML = '<div class="qrbig__card"><div class="qrbig__qr">' + qrSvg(joinLink()) + '</div><div class="qrbig__side"><div class="k">Scan with your phone camera</div><div class="qrbig__url">' + esc(participantLink()) + '</div><div class="k">Code</div><div class="joincard__code">' + esc(SB.ws ? SB.ws.join_code : '') + '</div><button class="btn" data-action="closeqr">Close</button></div></div>';
+    d.addEventListener('click', function (e) { if (e.target === d) hideBigQr(); });
+    document.body.appendChild(d);
+  }
+  function hideBigQr() { var d = $('#qrbig'); if (d) d.remove(); }
   function copyText(t) { if (!t) return; (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function () { toast('Copied'); }, function () { prompt('Copy this', t); }); }
   function renderSoon() {
     var a = document.activeElement;
@@ -1004,6 +1022,12 @@
     if (kind === 'loading') html += '<h2>Opening the workshop…</h2>';
     else if (kind === 'sent') html += '<h2>Check your email</h2><p class="muted">We sent a sign-in link to <b>' + esc(extra) + '</b>. Open it on this device and you land straight in the room. It can take a minute to arrive.</p>';
     else if (kind === 'join') html += '<h2>Enter the join code</h2><p class="muted">The facilitator has it on the screen.</p><label class="field">Your name<input id="a_name" value="' + esc(j.name || '') + '"></label><label class="field">Join code<input id="a_code" value="' + esc(code) + '" autocapitalize="characters"></label><div class="row"><button class="btn btn--primary" data-action="joincode">Join</button><button class="btn btn--ghost" data-action="signout">Sign out</button></div>';
+    else if (kind === 'rescan') html += '<h2>Scan the code on the screen</h2><p class="muted">This phone joined as a participant, but no workshop is in the link. Point your camera at the square on the facilitator’s screen to get back in.</p><div class="row"><button class="btn btn--ghost" data-action="signout">Start over</button></div>';
+    else if (kind === 'login' && slug && extra !== 'email') html += '<h2>Join the workshop</h2><p class="muted">Your name is all we need. It goes next to your ideas and votes.</p>' +
+      '<label class="field">Your name<input id="a_name" value="' + esc(j.name || '') + '" placeholder="Priya" autocomplete="given-name"></label>' +
+      '<label class="field' + (code ? ' hidden' : '') + '">Join code (on the screen)<input id="a_code" value="' + esc(code) + '" autocapitalize="characters"></label>' +
+      '<div class="row"><button class="btn btn--primary" data-action="joincode">Join</button></div><p class="small muted" id="a_msg"></p>' +
+      '<p class="small muted">Facilitator? <button class="linkbtn" data-action="emaillogin">Sign in by email</button></p>';
     else html += '<h2>Sign in to the board</h2><p class="muted">No password. We email you a link.</p>' +
       '<label class="field">Your name<input id="a_name" value="' + esc(j.name || '') + '" placeholder="Priya"></label>' +
       '<label class="field">Work email<input id="a_email" type="email" placeholder="you@company.com" autocomplete="email"></label>' +
@@ -1011,7 +1035,7 @@
       '<div class="row"><button class="btn btn--primary" data-action="sendlink">Email me a link</button></div><p class="small muted" id="a_msg"></p>';
     html += '</div>';
     $('#view').innerHTML = html;
-    var f = $('#a_email') || $('#a_code'); if (f) f.focus();
+    var f = $('#a_email') || (kind === 'login' && slug ? $('#a_name') : null) || $('#a_code'); if (f) f.focus();
   }
   function authSendLink() {
     var email = ($('#a_email') || {}).value || '', name = ($('#a_name') || {}).value || '', code = ($('#a_code') || {}).value || '';
@@ -1021,10 +1045,17 @@
     SB.sendLink(email, name.trim(), slug, code.trim()).then(function () { authScreen('sent', slug, email); }).catch(function (e) { $('#a_msg').textContent = 'Could not send: ' + (e.message || e); });
   }
   function authJoin() {
-    var code = ($('#a_code') || {}).value || '', name = ($('#a_name') || {}).value || '';
-    if (!code.trim()) { toast('Enter the code'); return; }
+    var code = ($('#a_code') || {}).value || '', name = ($('#a_name') || {}).value || '', slug = SB.param('w');
+    code = code.trim(); name = name.trim();
+    if (!code) { toast('Enter the code'); return; }
+    if (!SB.user && !name) { toast('Type your name first'); return; }
     authScreen('loading');
-    SB.joinWithCode(SB.param('w'), code.trim(), name.trim()).then(enterWorkshop).catch(function (e) { toast(e.message || 'Wrong code'); authScreen('join', SB.param('w')); });
+    var p = SB.user ? SB.joinWithCode(slug, code, name) : SB.joinAnonymously(slug, code, name);
+    p.then(enterWorkshop).catch(function (e) {
+      var m = (e && e.message) || 'Wrong code';
+      if (/anonymous/i.test(m)) { authScreen('login', slug, 'email'); var el = $('#a_msg'); if (el) el.textContent = 'Quick join is switched off on the server (Supabase Auth: allow anonymous sign-ins). Use email for now.'; return; }
+      toast(m); authScreen(SB.user ? 'join' : 'login', slug);
+    });
   }
   function enterWorkshop(r) {
     if (r && r.error) { if (r.error === 'join') { authScreen('join', SB.param('w')); return; } toast(r.error); authScreen('join', SB.param('w')); return; }
@@ -1040,13 +1071,14 @@
   function route() {
     var slug = SB.param('w');
     if (!SB.user) { authScreen('login', slug); return; }
+    if (!slug && SB.isAnon()) { authScreen('rescan'); return; }
     if (!slug) { document.body.classList.remove('auth'); MODE.sb = true; MODE.role = 'facilitator'; setModeStatus(); go('settings'); return; }
     authScreen('loading', slug);
     SB.openWorkshop(slug).then(enterWorkshop).catch(function (e) { toast(e.message || 'Could not open'); authScreen('join', slug); });
   }
   function settingsAccount() {
     var w = SB.ws;
-    var h = '<div class="card stack"><h3>Account</h3><div class="kv"><span class="k">Signed in</span><span>' + esc(SB.user.email) + '</span><span class="k">Role</span><span>' + esc(SB.role || 'no workshop open') + '</span></div><div class="row"><button class="btn btn--ghost btn--sm" data-action="signout">Sign out</button></div></div>';
+    var h = '<div class="card stack"><h3>Account</h3><div class="kv"><span class="k">Signed in</span><span>' + esc(SB.user.email || 'guest (no email)') + '</span><span class="k">Role</span><span>' + esc(SB.role || 'no workshop open') + '</span></div><div class="row"><button class="btn btn--ghost btn--sm" data-action="signout">Sign out</button></div></div>';
     if (w && SB.role === 'facilitator') {
       h += '<div class="card stack"><h3>This workshop: ' + esc(w.title) + '</h3>' +
         '<div class="kv"><span class="k">Participant link</span><span><code>' + esc(participantLink()) + '</code> <button class="btn btn--sm" data-action="copylink">Copy</button></span>' +

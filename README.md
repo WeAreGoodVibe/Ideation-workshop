@@ -18,7 +18,7 @@ Press **P** for presentation mode: facilitator-only controls disappear and type 
 
 ## Four ways to run it
 
-**0. Deployed with the backend (the real thing).** Vercel hosts the page and two small functions; Supabase holds organisations, workshops, members, ideas and votes with row level security and magic-link sign-in. Participants open the link on their phone, enter the join code, and vote from their seat. Every screen updates live. Setup in `docs/DEPLOY.md`.
+**0. Deployed with the backend (the real thing).** Vercel hosts the page and two small functions; Supabase holds organisations, workshops, members, ideas and votes with row level security and magic-link sign-in. Participants scan the QR code on the screen, type their name, and vote from their seat; no email needed. Every screen updates live. Setup in `docs/DEPLOY.md`.
 
 
 **1. Published as a claude.ai Artifact (recommended for the live session).**

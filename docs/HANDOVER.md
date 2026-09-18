@@ -38,14 +38,15 @@ Roles: the person who creates an organisation is its facilitator. Anyone who joi
 - Creating an organisation and workshop from the live site. It failed once with "new row violates row-level security policy for table orgs". Root cause: the insert returned the row in the same statement, before the trigger added membership. Fixed in the database (policy now also allows `created_by = auth.uid()`) and in `sb.js` (insert, then read back). **Not retested by a human yet.**
 - AI on the live site. Sidebar said "AI off" because `ANTHROPIC_API_KEY` was added to Vercel after the last deployment. A redeploy happened since. Check the sidebar says "AI ready".
 - Realtime updates between two devices on the live site.
-- Resend SMTP for magic links (Supabase's own mailer allows 2 emails an hour; a room of eight will hit it). Steps in the chat and in `docs/DEPLOY.md` section 1.
+- Resend SMTP for magic links (Supabase's own mailer allows 2 emails an hour). Since the QR join, only facilitators use email; participants join anonymously. Steps in `docs/DEPLOY.md` section 1.
+- QR join on a real phone. The Run sheet join card carries a QR (link plus join code); scanning it shows a name prompt and signs the phone in anonymously. Needs **Allow anonymous sign-ins** on in Supabase Authentication → Providers, which is a dashboard toggle and has not been flipped yet. Tested in Chromium at 390px only.
 - Wispr Flow in-progress transcript readability. Max's plan is to paste the live transcript every few minutes instead; the paste box keeps only the new part. That path needs no Wispr integration.
 
 ## Next steps, in order
 
 1. Open https://ideation-workshop-three.vercel.app, sign in, Settings → Workshops → New workshop. Organisation "Watches of Switzerland", title, join code. Expect the join card on the Run sheet. If it fails, read the error text and check the Supabase logs (`query_logs` with source `postgres_logs`).
 2. Confirm in the database: `select * from org_members; select title, join_code from workshops; select count(*) from second_ideas;` Expect one facilitator row, one workshop, twelve second ideas.
-3. Open the participant link on a phone, join with the code, vote. Watch the total change on the laptop without a refresh.
+3. Supabase → Authentication → Providers → turn on anonymous sign-ins. Then scan the QR on the Run sheet with a phone, type a name, vote. Watch the total change on the laptop without a refresh.
 4. Live capture → paste a few paragraphs → Read now. Expect ideas on the board within a minute. If not, Settings → AI brain tells you whether the server key is missing.
 5. Second viewpoint → Reveal → scroll. Then Re-seal.
 6. Set up Resend SMTP in Supabase before the day.

@@ -15,13 +15,13 @@
              insertSystem, updateSystem, deleteSystem, updateWorkshop,
              addTranscript, setAIIdeas, api(mode, prompt)
      admin:  listOrgs, createOrg, listWorkshops, createWorkshop, members,
-             bridgeToken, sendLink, signOut
+             bridgeToken, sendLink, joinAnonymously, isAnon, signOut
    ========================================================================== */
 window.SB = (function () {
   'use strict';
 
   var client = null, cfg = null, session = null, user = null, ws = null, role = null, org = null;
-  var active = false, channel = null, hooks = {}, refreshT = {}, myDots = {}, tallies = {};
+  var active = false, channel = null, hooks = {}, refreshT = {}, myDots = {}, tallies = {}, quiet = false;
 
   function on(name, fn) { hooks[name] = fn; }
   function emit(name, a) { if (hooks[name]) try { hooks[name](a); } catch (e) { console.error(e); } }
@@ -35,6 +35,7 @@ window.SB = (function () {
     var s = await client.auth.getSession(); session = s.data.session; user = session ? session.user : null;
     client.auth.onAuthStateChange(function (ev, sess) {
       var had = !!user; session = sess; user = sess ? sess.user : null;
+      if (quiet) return;
       if ((ev === 'SIGNED_IN' && !had) || ev === 'SIGNED_OUT') emit('auth', ev);
     });
     return true;
@@ -48,6 +49,23 @@ window.SB = (function () {
     if (r.error) throw r.error;
     return true;
   }
+  /* Participants scan the QR on the screen and join with a name only: an
+     anonymous Supabase session, no email round trip. The join code in the QR
+     is the same one shown on the screen, so this opens nothing the room could
+     not already reach. Needs "Allow anonymous sign-ins" on in Supabase Auth. */
+  async function joinAnonymously(slug, code, name) {
+    ls('wos.join', { name: name || '', slug: slug, code: code });
+    if (!user) {
+      quiet = true;
+      try {
+        var r = await client.auth.signInAnonymously({ options: { data: { display_name: name || '' } } });
+        if (r.error) throw r.error;
+        session = r.data.session; user = r.data.user;
+      } finally { quiet = false; }
+    }
+    return joinWithCode(slug, code, name);
+  }
+  function isAnon() { return !!(user && user.is_anonymous); }
   async function signOut() { await client.auth.signOut(); unsubscribe(); active = false; ws = null; role = null; location.href = location.pathname; }
 
   /* ------------------------------------------------------ workshop ------ */
@@ -184,7 +202,7 @@ window.SB = (function () {
   return {
     init: init, on: on, param: param, ls: ls,
     get user() { return user; }, get role() { return role; }, get ws() { return ws; }, get org() { return org; }, get active() { return active; }, get cfg() { return cfg; }, get myDots() { return myDots; },
-    sendLink: sendLink, signOut: signOut, openWorkshop: openWorkshop, joinWithCode: joinWithCode, refreshAll: refreshAll,
+    sendLink: sendLink, signOut: signOut, openWorkshop: openWorkshop, joinWithCode: joinWithCode, joinAnonymously: joinAnonymously, isAnon: isAnon, refreshAll: refreshAll,
     insertOpportunity: insertOpportunity, updateOpportunity: updateOpportunity, deleteOpportunity: deleteOpportunity, vote: vote,
     insertSystem: insertSystem, updateSystem: updateSystem, deleteSystem: deleteSystem, updateWorkshop: updateWorkshop,
     addTranscript: addTranscript, setAIIdeas: setAIIdeas, api: api,
