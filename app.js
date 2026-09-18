@@ -706,7 +706,7 @@
     html += '<div class="settings">';
     if (window.SB && SB.user) html += settingsAccount();
     html += '<div class="card"><h3>How this page is running</h3><div class="kv">' +
-      '<span class="k">Mode</span><span>' + (SBA() ? 'Connected to the shared backend as ' + esc(SB.role) : isArtifact() ? 'Published Artifact on claude.ai' : 'Standalone page, this browser only') + '</span>' +
+      '<span class="k">Mode</span><span>' + (SBA() ? 'Connected to the shared backend as ' + esc(SB.role) : (window.SB && SB.user) ? 'Signed in. No workshop open yet: create or open one below.' : isArtifact() ? 'Published Artifact on claude.ai' : 'Standalone page, this browser only') + '</span>' +
       '<span class="k">AI brain</span><span>' + (CAP.sample ? 'Claude via the Artifact (the viewer’s own plan pays, no key)' : serverAI() ? 'Claude via the server. No key needed here.' : (s.apiKey ? 'Anthropic API from this browser' : 'Off. Add a key below, or set ANTHROPIC_API_KEY on the server.')) + '</span>' +
       '<span class="k">Wispr Flow</span><span>' + (CAP.mcp ? 'Connector reachable' : 'Not reachable from a standalone page. Dictate into Live capture instead, or use the feed.') + '</span>' +
       '<span class="k">Shared board</span><span>' + (SBA() ? 'Yes: every signed-in member sees the same board live' : CAP.db ? 'Yes: everyone with the link sees the same register' : 'No: this browser only. Export and share the file.') + '</span>' +

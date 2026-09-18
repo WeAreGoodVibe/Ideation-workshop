@@ -163,7 +163,15 @@ window.SB = (function () {
 
   /* --------------------------------------------------------- admin ------ */
   async function listOrgs() { var r = await client.from('orgs').select('*').order('created_at'); return r.data || []; }
-  async function createOrg(name, slug) { var r = await client.from('orgs').insert({ name: name, slug: slug, created_by: user.id }).select().single(); if (r.error) fail(r.error, 'Could not create the organisation'); return r.data; }
+  async function createOrg(name, slug) {
+    /* Insert without RETURNING: the creator's membership is added by a trigger
+       after the row exists, so a same-statement read would be refused. */
+    var r = await client.from('orgs').insert({ name: name, slug: slug, created_by: user.id });
+    if (r.error) fail(r.error, 'Could not create the organisation');
+    var q = await client.from('orgs').select('*').eq('slug', slug).maybeSingle();
+    if (q.error || !q.data) fail(q.error || new Error('created but not readable'), 'Could not read the organisation back');
+    return q.data;
+  }
   async function listWorkshops() { var r = await client.from('workshops').select('id,org_id,slug,title,join_code,status,created_at').order('created_at', { ascending: false }); return r.data || []; }
   async function createWorkshop(orgId, fields, config) {
     var r = await client.from('workshops').insert({ org_id: orgId, slug: fields.slug, title: fields.title, join_code: fields.joinCode, max_dots: fields.maxDots || 3, config: config, created_by: user.id, status: 'live' }).select().single();

@@ -313,7 +313,7 @@ alter table public.transcript_chunks enable row level security;
 alter table public.second_ideas enable row level security;
 
 drop policy if exists orgs_select on public.orgs;
-create policy orgs_select on public.orgs for select using (public.is_member(id));
+create policy orgs_select on public.orgs for select using (public.is_member(id) or created_by = auth.uid());
 drop policy if exists orgs_insert on public.orgs;
 create policy orgs_insert on public.orgs for insert with check (auth.uid() is not null and created_by = auth.uid());
 drop policy if exists orgs_update on public.orgs;
