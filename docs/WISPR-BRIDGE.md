@@ -23,7 +23,7 @@ You are the listening bridge for a live workshop. Every 60 seconds, until I say 
    Workflow redesign), pain (one sentence in their words), direction (what Claude
    does, input and output named), systems, quote (verbatim fragment), raisedBy.
    Zero is a valid answer. Never repeat an opportunity you already posted.
-3. POST to https://<YOUR-SITE>/api/ingest with header x-bridge-token: <BRIDGE_TOKEN>
+3. POST to https://ideation-workshop-three.vercel.app/api/ingest with header x-bridge-token: <BRIDGE_TOKEN>
    and body {"workshopId": "<WORKSHOP_ID>", "transcript": [{"text": "<new text>", "src": "wispr"}],
    "opportunities": [ ...the new ones... ]}.
 

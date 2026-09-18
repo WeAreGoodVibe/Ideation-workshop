@@ -8,8 +8,8 @@ Three parts: the static page plus two small server functions on Vercel, the data
 2. Open **SQL Editor**, paste the whole of `supabase/schema.sql`, run it. It is safe to run twice.
 3. **Authentication → Providers → Email**: keep Email on. Turn **Confirm email** off (magic links already prove the address). Leave "Enable email OTP" on.
 4. **Authentication → URL Configuration**:
-   - Site URL: your Vercel URL, for example `https://ideation-board.vercel.app`
-   - Redirect URLs: add `https://ideation-board.vercel.app/**` and `http://localhost:8765/**`
+   - Site URL: your Vercel URL, for example `https://ideation-workshop-three.vercel.app`
+   - Redirect URLs: add `https://ideation-workshop-three.vercel.app/**` and `http://localhost:8765/**`
 5. **Authentication → Rate limits**: the free tier sends 2 magic-link emails an hour through Supabase's own mailer. For a room of eight, set up an SMTP provider (Resend, Postmark, Gmail app password) under **Project Settings → Auth → SMTP** before the day, or you will hit the limit halfway through the join step.
 6. Copy from **Project Settings → API**: Project URL, anon public key, service_role key.
 
