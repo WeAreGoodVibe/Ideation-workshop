@@ -218,11 +218,14 @@ end; $$;
 drop trigger if exists workshops_after_insert on public.workshops;
 create trigger workshops_after_insert after insert on public.workshops for each row execute function public.workshop_after_insert();
 
--- opportunities get the next number in the workshop
+-- opportunities get the next number in the workshop. The advisory lock
+-- serialises inserts per workshop: the extractor adds several ideas at once
+-- and without it two of them read the same max(seq) and one insert fails.
 create or replace function public.opportunity_seq() returns trigger
 language plpgsql as $$
 begin
   if new.seq is null or new.seq = 0 then
+    perform pg_advisory_xact_lock(hashtext('opportunity_seq:' || new.workshop_id::text));
     select coalesce(max(seq), 0) + 1 into new.seq from opportunities where workshop_id = new.workshop_id;
   end if;
   if new.created_by is null then new.created_by = auth.uid(); end if;

@@ -154,7 +154,17 @@ window.SB = (function () {
     return r;
   }
   function fail(e, what) { var m = (e && (e.message || e.error_description)) || String(e); emit('toast', what + ': ' + m); throw e; }
-  async function insertOpportunity(o) { var r = await client.from('opportunities').insert(Object.assign({ workshop_id: ws.id }, rowFromOp(o))).select().single(); if (r.error) fail(r.error, 'Could not add'); refresh('opportunities'); return r.data; }
+  async function insertOpportunity(o) {
+    var row = Object.assign({ workshop_id: ws.id }, rowFromOp(o)), r;
+    /* A burst of inserts can still collide on (workshop_id, seq) if the
+       database trigger is an older version; a short retry covers it. */
+    for (var attempt = 0; attempt < 4; attempt++) {
+      r = await client.from('opportunities').insert(row).select().single();
+      if (!r.error || r.error.code !== '23505') break;
+      await new Promise(function (res) { setTimeout(res, 120 + Math.random() * 300); });
+    }
+    if (r.error) fail(r.error, 'Could not add'); refresh('opportunities'); return r.data;
+  }
   async function updateOpportunity(uid, patch) { var r = await client.from('opportunities').update(rowFromOp(patch)).eq('id', uid); if (r.error) fail(r.error, 'Could not save'); }
   async function deleteOpportunity(uid) { var r = await client.from('opportunities').delete().eq('id', uid); if (r.error) fail(r.error, 'Could not delete'); refresh('opportunities'); }
   async function vote(uid, delta) {
