@@ -12,7 +12,7 @@ Built for reuse: every workshop stores its own template (client name, teams, pha
 
 | Thing | Location |
 |---|---|
-| Code | GitHub `WeAreGoodVibe/Ideation-workshop`, branches `main` and `claude/trusting-feynman-qr5izj` (identical; the Claude branch is the repo default and the one Vercel production tracks) |
+| Code | GitHub `WeAreGoodVibe/Ideation-workshop`. Vercel production tracks `main` (Environments → Production → Branch Tracking, changed 18 Sep 2026). The older `claude/trusting-feynman-qr5izj` branch is history and can be deleted. |
 | Live site | https://ideation-workshop-three.vercel.app (Vercel project `ideation-workshop`, team `max-einsohns-projects`, auto-deploys on push) |
 | Database and login | Supabase project `iaqtvtqsputfnityhfog` (name Ideation-Workshop, Singapore region) |
 | claude.ai Artifact version | https://claude.ai/artifact/3jjeNVkZcnzL2CpH18xzTi (older build: no login, uses Artifact capabilities instead) |
