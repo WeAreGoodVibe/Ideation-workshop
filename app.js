@@ -136,9 +136,24 @@
   }
 
   /* --------------------------------------------------------- transcript -- */
+  /* Pasting the whole transcript again is the normal way to feed the board:
+     keep only the part after what we already hold. */
+  function trimOverlap(text) {
+    var norm = function (x) { return String(x).replace(/\s+/g, ' ').trim(); };
+    var all = norm(fullTranscript()), t = norm(text);
+    if (!all || !t) return text;
+    if (all.indexOf(t) >= 0) return '';
+    var tail = all.slice(-1500);
+    for (var n = Math.min(tail.length, t.length); n >= 60; n -= 20) {
+      var probe = tail.slice(-n), i = t.indexOf(probe);
+      if (i >= 0) return t.slice(i + n).trim();
+    }
+    return text;
+  }
   function addTranscript(text, src) {
     text = String(text || '').trim();
-    if (!text) return;
+    if (src !== 'demo' && src !== 'feed') text = trimOverlap(text);
+    if (!text) { toast('Nothing new in that paste'); return; }
     S.transcript.push({ t: now(), text: text, src: src || 'manual' });
     if (S.transcript.length > 2000) S.transcript.shift();
     save();
@@ -673,7 +688,7 @@
       '<button data-action="src-wispr" aria-pressed="' + (src === 'wispr') + '"' + (CAP.mcp ? '' : ' disabled') + '>Wispr Flow meeting<small>' + (CAP.mcp ? 'Polls the meeting recorder transcript via the connector.' : 'Needs the Artifact build with the Wispr Flow connector.') + '</small></button>' +
       '<button data-action="src-feed" aria-pressed="' + (src === 'feed') + '">JSON feed URL<small>A Claude Code or Cowork session writes ideas to a file; this polls it.</small></button>' +
       '<button data-action="src-demo" aria-pressed="' + (src === 'demo') + '">Demo transcript<small>Eight voices, one every nine seconds. Test the loop.</small></button></div>' +
-      '<label class="field">Type or dictate (Wispr Flow hotkey works here). Ctrl or Cmd + Enter to add.<textarea id="manualBox" placeholder="Priya: the AP mailbox is two hundred emails a day…"></textarea></label>' +
+      '<label class="field">Paste the transcript here (the whole thing each time is fine: only the new part is added). Wispr Flow dictation works here too. Ctrl or Cmd + Enter to add.<textarea id="manualBox" placeholder="Paste from the live notes, or dictate…"></textarea></label>' +
       '<div class="row"><button class="btn" data-action="addmanual">Add to transcript</button><button class="btn btn--primary" data-action="extract">Read now</button><label class="check"><input type="checkbox" id="autoExtract"' + (S.settings.autoExtract ? ' checked' : '') + '> Auto-read every ' + S.settings.pollSec + 's</label></div>' +
       '<div class="log" id="liveLog"></div></div>' +
       '<div class="card stack"><div class="row spread"><h3>Transcript</h3><button class="btn btn--sm btn--ghost" data-action="cleartranscript">Clear</button></div><div class="feed" id="feed">' + S.transcript.map(function (c) { return feedItem(c, false); }).join('') + '</div></div></div>';

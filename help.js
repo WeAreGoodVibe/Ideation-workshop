@@ -77,7 +77,7 @@ window.HELP = (function () {
       modeStatus: 'How this page is running: as an Artifact with Claude built in, or standalone with your own key.',
       nowBlock: 'The block you are in and how long it should take.',
       nowTime: 'Time spent in this block. Turns red when you are over.',
-      manualBox: 'Type here, or put the cursor here and press your Wispr Flow hotkey to dictate. Ctrl or Cmd plus Enter adds it to the transcript.',
+      manualBox: 'Paste the transcript from your live notes here every few minutes. Paste the whole thing each time if that is easier: only the new part is added. Ctrl or Cmd plus Enter adds it.',
       autoExtract: 'When ticked, Claude reads new transcript on a timer without you pressing anything.',
       liveLog: 'What the page has done, newest first. Errors show here.',
       feed: 'Everything captured so far, newest at the bottom.',
@@ -235,7 +235,7 @@ window.HELP = (function () {
     process: ['In blocks 3 and 4, click a card to see the questions to ask about that phase.', 'Ideas Claude hears appear under the phase they belong to. The big number counts them.', 'If someone says something Claude missed, press Add opportunity here on that phase.'],
     opportunities: ['Every idea lands here with a number. The badge in the sidebar bumps when one arrives.', 'Click a title to rename it. Press Edit for the full form. Table mode is a spreadsheet you can type into.', 'In block 6 use the plus and minus for dot votes. Press Validate when the room confirms an idea.', 'Use the filters to show only Finance, only Purchasing, or only one status.', 'Press Export Excel at the end of the session.'],
     second: ['Keep it locked until block 7.', 'Press Reveal, then scroll slowly. The numbers count up, then the ideas appear.', 'For each idea, read the "why you did not raise it" line to the room.', 'Press Put it on the board for any idea the room wants to keep.'],
-    live: ['Pick one source. Demo transcript is the safest way to test.', 'Or click in the box, press your Wispr Flow hotkey, dictate a sentence, then press Add to transcript.', 'Claude reads new text every 60 seconds and adds ideas to the board. Press Read now to force it.', 'The AI line in the sidebar must say ready or listening. If it says off, go to Settings.'],
+    live: ['Pick one source. Demo transcript is the safest way to test.', 'Or copy the live transcript from Wispr Flow every few minutes and paste it in the box, then press Add to transcript. Pasting the whole transcript again is fine: only the new part is added.', 'Claude reads new text every 60 seconds and adds ideas to the board. Press Read now to force it.', 'The AI line in the sidebar must say ready or listening. If it says off, go to Settings.'],
     settings: ['If this page is running as a claude.ai Artifact, AI is already on. Nothing to add.', 'Otherwise paste an Anthropic API key and press Save settings.', 'For Wispr Flow, start recording the meeting first, then pick it in the dropdown.', 'Press Save settings after any change.']
   };
   function howtoHtml(view) {
