@@ -389,3 +389,11 @@ begin
 end $$;
 alter table public.votes replica identity full;
 alter table public.opportunities replica identity full;
+
+-- -------------------------------------------------------------- hardening --
+-- Helpers are for signed-in users only; trigger functions need no callers.
+revoke execute on all functions in schema public from public, anon;
+revoke execute on function public.touch_updated_at(), public.opportunity_seq(), public.check_vote_budget(), public.org_creator_is_facilitator(), public.workshop_after_insert() from authenticated;
+alter function public.touch_updated_at() set search_path = public;
+alter function public.opportunity_seq() set search_path = public;
+grant execute on function public.is_member(uuid), public.is_facilitator(uuid), public.workshop_org(uuid), public.ws_member(uuid), public.ws_facilitator(uuid), public.join_workshop(text, text, text), public.cast_vote(uuid, int), public.my_role(uuid) to authenticated;
