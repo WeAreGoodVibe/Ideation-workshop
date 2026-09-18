@@ -991,6 +991,7 @@
     // the decoder, while read() must stay cheap enough to run on every scroll
     // event. The lerp here is also what turns a jittery wheel into a glide.
     function tick() {
+      if (dead) return;
       // Deadband. A phone decoder cannot service a seek every frame, so asking
       // for one costs more than it shows; 20ms of clip is under a frame of
       // footage anyway.
@@ -1152,8 +1153,9 @@
     }
 
     // ---- wiring -----------------------------------------------------------
-    var ticking = false;
+    var ticking = false, dead = false;
     addEventListener('scroll', function () {
+      if (dead) return;
       if (!ticking) { ticking = true; requestAnimationFrame(function () { read(); ticking = false; }); }
     }, { passive: true });
 
@@ -1178,6 +1180,7 @@
 
     var lastW = innerWidth;
     addEventListener('resize', function () {
+      if (dead) return;
       // Ignore URL-bar-only height changes on phones. Relaying out on those
       // makes the page jump under the reader's thumb for no reason.
       if (innerWidth === lastW && isMobile()) { vh = innerHeight; return; }
@@ -1199,6 +1202,15 @@
     document.documentElement.classList.add('sc-ready');
 
     var api = { layout: layout, read: read, acts: acts, worlds: worlds, clips: playheads, lerp: LERP };
+    // destroy(): stop the frame loop and ignore events. A page that replaces
+    // the DOM it mounted on (a live board re-rendering on data) must call
+    // this before mounting again, or the old instance keeps driving nodes
+    // that are no longer on the page.
+    api.destroy = function () {
+      dead = true;
+      var i = global.ScrollCraft.instances.indexOf(api);
+      if (i >= 0) global.ScrollCraft.instances.splice(i, 1);
+    };
     global.ScrollCraft.instances.push(api);
     return api;
   }

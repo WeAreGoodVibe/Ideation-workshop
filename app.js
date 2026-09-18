@@ -48,7 +48,7 @@
   };
 
   var CAP = { sample: null, mcp: null, db: null, downloads: null, probed: false };
-  var UI = { view: 'runsheet', opsMode: 'cards', filter: { fn: 'All', status: 'All', q: '' }, present: false, seq: 0 };
+  var UI = { view: 'runsheet', opsMode: 'cards', filter: { fn: 'All', status: 'All', q: '' }, present: false, seq: 0, sc: null };
   var RUN = { extracting: false, speech: null, wisprTimer: null, feedTimer: null, extractTimer: null, demoTimer: null, demoIdx: 0, lastCount: 0, source: 'none', log: [], failures: 0 };
 
   /* ------------------------------------------------------ persistence -- */
@@ -488,22 +488,42 @@
   /* -------------------------------------------------------------- views -- */
   function go(view) {
     if (view === 'second' && UI.view !== 'second') UI.seq++;
+    if (view === 'second') UI.scJump = true;
     UI.view = view;
     $$('.navbtn').forEach(function (b) { if (b.dataset.view === view) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
     window.scrollTo(0, 0);
     render();
   }
+  /* What the revealed second viewpoint is built from. While this is unchanged
+     a data refresh must not touch the DOM: the scroll engine is driving those
+     nodes, and replacing them leaves the reader with blank, undriven copy the
+     moment they scroll back up. */
+  function secondSig() {
+    var raised = S.opportunities.filter(function (o) { return o.status !== 'Merged' && o.status !== 'Parked'; });
+    return JSON.stringify([UI.seq, MODE.role, raised.length, raised.map(function (o) { return o.fn; }).sort().join(''),
+      CFG.blindSpots.map(function (i) { return i.id; }).join('|'), S.secondAI.map(function (i) { return i.id + i.title; }).join('|')]);
+  }
   function render() {
     var root = $('#view');
     var fn = { runsheet: vRunsheet, systems: vSystems, process: vProcess, opportunities: vOpportunities, second: vSecond, live: vLive, settings: vSettings }[UI.view] || vRunsheet;
+    if (UI.view === 'second' && S.revealed) {
+      var sig = secondSig();
+      if (UI.sc && root.getAttribute('data-sc-sig') === sig && root.firstChild) return;
+      root.setAttribute('data-sc-sig', sig);
+    } else root.removeAttribute('data-sc-sig');
     root.innerHTML = fn();
     afterRender();
   }
   function afterRender() {
+    if (UI.sc) { try { UI.sc.destroy(); } catch (e) {} UI.sc = null; }
     if (UI.view === 'second' && S.revealed && window.ScrollCraft) {
-      var root = $('#view');
-      if (root.getAttribute('data-sc-mounted') !== String(UI.seq)) { root.setAttribute('data-sc-mounted', String(UI.seq)); window.ScrollCraft.mount(root); }
+      UI.sc = window.ScrollCraft.mount($('#view'));
+      /* Opening the view lands on the pinned stage straight away. Left at
+         scroll 0 the stage starts below the nav, so on a phone the first
+         screen is mostly empty canvas with the number at the bottom. */
+      if (UI.scJump) { var act = $('.reveal'); if (act) window.scrollTo({ top: act.getBoundingClientRect().top + window.scrollY, behavior: 'instant' }); }
     }
+    UI.scJump = false;
     if (UI.view === 'live') { var f = $('#feed'); if (f) f.scrollTop = f.scrollHeight; updateTiles(); var lg = $('#liveLog'); if (lg) lg.textContent = RUN.log.join('\n'); }
     if (UI.view === 'settings') fillAdmin();
     if (UI.view === 'settings' && CAP.mcp) {
@@ -660,11 +680,12 @@
     var ideas = CFG.blindSpots.concat(S.secondAI.map(function (i) { return Object.assign({}, i, { fromAI: true }); }));
     var html = '';
     html += '<section class="reveal" data-sc-act="pin" data-sc-span="2.6"><div class="sc-stage">' +
-      '<div class="reveal__copy" data-sc-cue="0.02 0.34"><div class="reveal__eyebrow">In the last 90 minutes</div><div class="reveal__n" data-sc-count="0 ' + raised + '" data-sc-count-at="0.05 0.28">0</div><div class="reveal__k">ideas came from this room</div>' +
+      '<div class="reveal__copy" data-sc-cue="-0.3 0.34"><div class="reveal__eyebrow">In the last 90 minutes</div><div class="reveal__n">' + raised + '</div><div class="reveal__k">ideas came from this room</div>' +
       '<div class="reveal__chips">' + CFG.functionsTags.map(function (f) { return byFn[f] ? chip('chip--fn-' + f, byFn[f] + ' ' + f) : ''; }).join('') + '</div></div>' +
       '<div class="reveal__copy" data-sc-cue="0.38 0.68"><div class="reveal__eyebrow">Now the second viewpoint</div><h2 data-sc-kinetic="lines">Here is what we saw<br>that you did not say.</h2></div>' +
       '<div class="reveal__copy" data-sc-cue="0.72 1"><div class="reveal__pair"><div><div class="reveal__k">Raised by you</div><div class="reveal__n">' + raised + '</div></div><div><div class="reveal__k">Seen from outside</div><div class="reveal__n" data-sc-count="0 ' + ideas.length + '" data-sc-count-at="0.74 0.92">0</div></div></div>' +
       '<p class="reveal__lede">Every idea below carries one line: why it did not come up. Keep scrolling to read them.</p></div>' +
+      '<div class="reveal__hint" aria-hidden="true"><span>Scroll down</span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></div>' +
       '</div></section>';
     html += '<div class="view__head" style="margin-top:var(--sc-6)"><div><h1>The second viewpoint</h1><p>' + CFG.blindSpots.length + ' prepared before today' + (S.secondAI.length ? ', ' + S.secondAI.length + ' written by Claude from the transcript' : '') + '. Promote the ones that land straight onto the board.</p></div>' +
       '<div class="row fac"><button class="btn btn--ghost btn--sm" data-action="regen">Ask Claude again</button><button class="btn btn--ghost btn--sm" data-action="reseal">Re-seal</button></div></div>';

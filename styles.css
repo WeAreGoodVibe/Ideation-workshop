@@ -401,6 +401,9 @@ body.participant .op__id { display: none; }
 .reveal__chips { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; margin-top: 16px; }
 .reveal__lede { margin: 24px auto 0; max-width: 40ch; color: var(--sc-ink-soft); font-size: 1.05rem; }
 .reveal__pair .reveal__k { margin: 0 0 6px; }
+.reveal__hint { position: fixed; left: 50%; translate: -50% 0; bottom: max(14px, env(safe-area-inset-bottom)); z-index: 5; display: flex; flex-direction: column; align-items: center; gap: 0; padding: 6px 14px 4px; border-radius: 999px; background: color-mix(in oklab, var(--sc-surface) 85%, transparent); border: 1px solid var(--line); font-size: 0.78rem; font-weight: 700; color: var(--sc-ink-soft); letter-spacing: 0.02em; pointer-events: none; opacity: clamp(0, 1 - var(--sc-p, 0) * 7, 1); }
+.reveal__hint svg { animation: hintbob 1.6s ease-in-out infinite; }
+@keyframes hintbob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(5px); } }
 code { font-family: var(--sc-font-mono); font-size: 0.82em; background: var(--surface-2); padding: 1px 6px; border-radius: 4px; }
 @media (max-width: 700px) { .joincard { grid-template-columns: 1fr; } .qrbig__card { grid-template-columns: 1fr; } .qrbig__qr { width: min(80vw, 50vh); } }
 
@@ -426,6 +429,6 @@ body.present .nav { width: var(--nav-w); }
   .reveal__pair { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .op, .badge.bump { animation: none; }
+  .op, .badge.bump, .reveal__hint svg { animation: none; }
   .sheet { transition: none; }
 }
