@@ -83,6 +83,20 @@ Verified with Playwright against a stubbed backend and a stubbed Claude reply (s
 
 Verified with Playwright against the fake backend: facilitator creates a workshop, a read adds an AI phase and system, a hand-added phase carries the facilitator's name, votes per person saves; a participant opening the join link is asked for a name, then adds a system and a phase with their name on them, sees Edit or delete only on their own rows, and adds, edits and deletes their own idea. Not yet exercised on the live project: a participant phone against the real policies.
 
+## Changed on 20 September (reset votes, prompts and skills)
+
+On a branch, not yet merged. Two things the facilitator asked for after running a live session.
+
+**Reset votes.** A Voting bar now sits at the top of the Opportunities view, above the filters. It shows how many votes have been cast, lets the facilitator change **Votes each** without leaving the board, and has **Reset votes**, which clears every vote so the room can go again on a shorter list. It survives presentation mode (`part-hide`, not `fac`), because that is exactly when it is needed, and participants never see it.
+
+Reset needs a database function. Row level security lets a person delete only their own vote rows, so a facilitator clearing the room's votes is impossible from the browser. `public.reset_votes(p_ws, p_opp)` is security definer and does the facilitator check itself. It is in `schema.sql` for a fresh project and in `supabase/migration-002-reset-votes.sql` for one that already exists. Until that runs, the button says what to run and does nothing.
+
+**Prompts and skills.** A new view, key 6, between Second viewpoint and Live capture. **Generate** sends the ideas the room landed on (never Parked or Merged, Validated first, then best voted) to Claude, two per request with three requests in flight, and gets back a pack for each: an **interview prompt** that makes Claude interview whoever owns that work, the **artefact** itself shaped by build type (a SKILL.md, a scheduled task prompt, project instructions, a setup checklist, a redesigned workflow), a **first message** to send once it exists, the connectors it needs and one watch-out. Every part has a Copy button. The packs also come out as a **Prompts and Skills** tab in the Excel export.
+
+The packs live in `workshops.config.promptPacks`, keyed by opportunity id, so no schema change was needed for this half and every screen gets them over realtime. In standalone mode they live in `S.promptPacks` in localStorage.
+
+Two requests at a time keeps each reply inside the token ceiling and the function timeout; `vercel.json` now sets `maxDuration` 60 on `api/*.js` so a slow generation is not cut off.
+
 ## Dead ends, so the next session does not repeat them
 
 - "AI off" in the sidebar with the key present on Vercel was a stale tab or a preview domain, not a code problem. Check the URL and hard reload before touching anything.

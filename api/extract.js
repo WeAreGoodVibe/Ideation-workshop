@@ -1,4 +1,4 @@
-/* POST /api/extract  { workshopId, prompt, mode: "extract" | "second" }
+/* POST /api/extract  { workshopId, prompt, mode: "extract" | "second" | "prompts" }
    Facilitators only. Runs the prompt the page built through Claude with the
    server-side key and returns the parsed JSON. The page inserts the rows
    itself under its own row-level-security rights. */
@@ -39,6 +39,25 @@ const extractSchema = (functions) => ({
   }
 });
 
+/* mode "prompts": for each opportunity the room landed on, write the thing
+   that builds it. Three artefacts, because they are used at three different
+   moments: an interview to pull the detail out of the person who owns the
+   work, the artefact itself (a skill, a scheduled task, project instructions),
+   and the first message to paste once it exists. */
+const PACK_KINDS = ['Skill', 'Scheduled task', 'Project', 'Setup', 'Workflow redesign'];
+const promptsSchema = {
+  type: 'object', additionalProperties: false, required: ['packs'],
+  properties: { packs: { type: 'array', items: {
+    type: 'object', additionalProperties: false,
+    required: ['id', 'title', 'kind', 'artefactName', 'interview', 'artefact', 'firstRun', 'connectors', 'watchOut'],
+    properties: {
+      id: { type: 'string' }, title: { type: 'string' },
+      kind: { type: 'string', enum: PACK_KINDS }, artefactName: { type: 'string' },
+      interview: { type: 'string' }, artefact: { type: 'string' }, firstRun: { type: 'string' },
+      connectors: { type: 'array', items: { type: 'string' } }, watchOut: { type: 'string' }
+    } } } }
+};
+
 module.exports = async (req, res) => {
   if (req.method !== 'POST') return json(res, 405, { error: 'POST only' });
   try {
@@ -48,9 +67,10 @@ module.exports = async (req, res) => {
     if (!body.workshopId || !body.prompt) return json(res, 400, { error: 'workshopId and prompt are required' });
     if (!(await isFacilitator(tokenFromRequest(req), body.workshopId))) return json(res, 403, { error: 'Facilitators only' });
     if (String(body.prompt).length > 200000) return json(res, 413, { error: 'Prompt too long' });
-    const result = body.mode === 'second'
-      ? await askClaude(body.prompt, { effort: 'high' })
-      : await askClaude(body.prompt, { effort: 'low', schema: extractSchema(functionsFrom(body)) });
+    let result;
+    if (body.mode === 'second') result = await askClaude(body.prompt, { effort: 'high' });
+    else if (body.mode === 'prompts') result = await askClaude(body.prompt, { effort: 'low', maxTokens: 16000, schema: promptsSchema });
+    else result = await askClaude(body.prompt, { effort: 'low', schema: extractSchema(functionsFrom(body)) });
     return json(res, 200, result);
   } catch (e) {
     return json(res, 500, { error: String(e.message || e) });

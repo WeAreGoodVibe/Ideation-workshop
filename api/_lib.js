@@ -80,7 +80,7 @@ async function askClaude(prompt, opts) {
   if (!key) throw new Error('ANTHROPIC_API_KEY is not set on the server');
   const body = {
     model: process.env.ANTHROPIC_MODEL || 'claude-opus-5',
-    max_tokens: 6000,
+    max_tokens: (opts && opts.maxTokens) || 6000,
     output_config: { effort: (opts && opts.effort) || 'low' },
     messages: [{ role: 'user', content: prompt }]
   };

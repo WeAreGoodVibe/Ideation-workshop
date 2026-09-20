@@ -6,6 +6,7 @@ Three parts: the static page plus two small server functions on Vercel, the data
 
 1. Create a project at supabase.com. Region: Sydney (ap-southeast-2) for Melbourne users.
 2. Open **SQL Editor**, paste the whole of `supabase/schema.sql`, run it. It is safe to run twice.
+   **On a project that already exists**, do not re-run the whole file mid-season. Run the small additive files in `supabase/` instead, newest last. Right now that is `migration-002-reset-votes.sql`, which adds the one function behind the **Reset votes** button. It creates nothing else and changes nothing already running, so it is safe to run while a workshop is live. Without it, Reset votes says so and does nothing.
 3. **Authentication → Providers → Email**: keep Email on. Turn **Confirm email** off (magic links already prove the address). Leave "Enable email OTP" on.
    **Authentication → Providers → Anonymous** (Supabase calls it "Allow anonymous sign-ins"): turn it **on**. Participants scan the QR on the screen, type a name and are in; that path signs them in anonymously. Without this toggle the phone falls back to email. Under **Rate limits**, "anonymous users" defaults to 30 an hour per IP address; a room on one Wi-Fi shares an IP, so raise it if the room is bigger than about twenty.
 4. **Authentication → URL Configuration**:

@@ -44,7 +44,7 @@
 
   var S = {
     opportunities: [], systems: JSON.parse(JSON.stringify(CFG.systems)),
-    secondAI: [], revealed: false,
+    secondAI: [], promptPacks: {}, revealed: false,
     agendaIdx: -1, blockDone: {},
     timer: { running: false, startedAt: 0, elapsedBefore: 0 },
     transcript: [], consumedChars: 0,
@@ -57,7 +57,7 @@
   var RUN = { extracting: false, speech: null, wisprTimer: null, feedTimer: null, extractTimer: null, demoTimer: null, demoIdx: 0, lastCount: 0, source: 'none', log: [], failures: 0 };
 
   /* ------------------------------------------------------ persistence -- */
-  var SHARED_KEYS = ['opportunities', 'systems', 'secondAI', 'revealed', 'agendaIdx', 'blockDone', 'updatedAt'];
+  var SHARED_KEYS = ['opportunities', 'systems', 'secondAI', 'promptPacks', 'revealed', 'agendaIdx', 'blockDone', 'updatedAt'];
   function save() {
     S.updatedAt = now();
     if (SBA()) { try { localStorage.setItem('wos.settings', JSON.stringify(S.settings)); } catch (e) {} return; }
@@ -277,18 +277,19 @@
   }
 
   function askJSON(prompt, tier) {
+    var complex = tier === 'complex', pack = tier === 'prompts';
     if (CAP.sample) {
-      return CAP.sample.json(prompt, { modelTier: tier === 'complex' ? 'complex' : 'quick', cache: false });
+      return CAP.sample.json(prompt, { modelTier: complex ? 'complex' : 'quick', cache: false });
     }
-    if (serverAI()) return SB.api(tier === 'complex' ? 'second' : 'extract', prompt, { functions: CFG.functionsTags });
+    if (serverAI()) return SB.api(complex ? 'second' : pack ? 'prompts' : 'extract', prompt, { functions: CFG.functionsTags });
     var key = S.settings.apiKey;
     if (!key) return Promise.reject({ code: 'no_key', message: 'No API key' });
     var body = {
-      model: S.settings.model || 'claude-opus-5', max_tokens: 6000,
-      output_config: { effort: tier === 'complex' ? 'high' : 'low', format: { type: 'json_schema', schema: tier === 'complex' ? undefined : schema() } },
+      model: S.settings.model || 'claude-opus-5', max_tokens: pack ? 16000 : 6000,
+      output_config: { effort: complex ? 'high' : 'low', format: { type: 'json_schema', schema: complex ? undefined : schema() } },
       messages: [{ role: 'user', content: prompt }]
     };
-    if (tier === 'complex') delete body.output_config.format;
+    if (complex || pack) delete body.output_config.format;
     return fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
@@ -377,6 +378,115 @@
       })
       .catch(function (e) { log('Second viewpoint error: ' + (e && (e.code + ' ' + e.message))); setAiStatus('bad'); });
   }
+
+  /* ------------------------------------------------- prompts and skills -- */
+  /* The board says what to build. This writes the thing that builds it.
+     Three artefacts per opportunity, because they are used at three
+     different moments: an interview that pulls the detail out of the person
+     who owns the work, the artefact itself, and the first message to send
+     once it exists. They live in the workshop config so every screen sees
+     them and the export picks them up. */
+  function packs() { return (SBA() ? (CFG.promptPacks || {}) : (S.promptPacks || {})) || {}; }
+  function packFor(o) { return packs()[o.id] || null; }
+  function savePacks(map) {
+    if (SBA()) {
+      CFG.promptPacks = map;
+      var cfg = Object.assign({}, (SB.ws && SB.ws.config) || {});
+      cfg.promptPacks = map;
+      return SB.updateWorkshop({ config: cfg }).catch(function (e) { log('packs not saved: ' + (e && e.message)); });
+    }
+    S.promptPacks = map; save();
+    return Promise.resolve();
+  }
+
+  /* Which ideas get a pack: the ones the room landed on. Validated first,
+     then the best voted, and never an idea that was parked or merged away. */
+  function packCandidates() {
+    return S.opportunities.filter(function (o) { return o.status !== 'Parked' && o.status !== 'Merged'; })
+      .sort(function (a, b) { return (b.status === 'Validated') - (a.status === 'Validated') || (b.votes - a.votes) || (a.createdAt - b.createdAt); });
+  }
+
+  function promptsPrompt(ops) {
+    var rows = ops.map(function (o) {
+      return { id: o.id, title: o.title, team: o.fn, phase: o.phase, surface: o.surface, build: o.build,
+        pain: o.pain, whatClaudeDoes: o.direction, systems: o.systems, quote: o.quote, raisedBy: o.raisedBy, owner: o.owner, notes: o.notes };
+    });
+    return [
+      'You are the consultant who has to turn a workshop shortlist into things that get built. For each opportunity below, write what the person who owns that work can use on Monday morning with no further help from you.',
+      contextBlock(),
+      'For EVERY opportunity, return one pack with these fields.',
+      '"kind": which of Skill, Scheduled task, Project, Setup, Workflow redesign the artefact is. Start from the opportunity\'s build type and keep it unless it is plainly wrong for what the idea actually needs.',
+      '"artefactName": a short file or task name, lower case with hyphens, for example "supplier-invoice-triage".',
+      '"interview": a prompt that the owner of the work pastes into Claude so Claude interviews THEM. It is addressed to Claude in the second person and it must: give Claude the role and the goal; say to ask one question at a time and wait for the answer; say to push back on a vague answer and ask for a real example; name eight to fifteen specific questions covering the trigger, the inputs and exactly where they live, the decision rules, the exceptions and edge cases, what a good output looks like, who checks it, how often it runs, and what must never happen; and finish by telling Claude to write the finished artefact from the answers. 200 to 350 words.',
+      '"artefact": the thing itself, ready to paste, in Markdown. Shape it by kind.',
+      '  Skill: a SKILL.md. First line "# <Name>", then a one-line description, then "## When to use this", "## What you need before you start", "## Steps" as a numbered procedure specific enough that two people would produce the same output, "## Output format" with the actual layout, "## Quality bar", and "## Stop and ask" listing what Claude must never decide alone.',
+      '  Scheduled task: the exact prompt text to paste into a Claude scheduled task, opening with a line naming the cadence and the connectors, then the instruction, then the output and where it goes, then the rule for when there is nothing to report.',
+      '  Project: the project custom instructions, plus a "## Files to add" list naming the documents to upload and why each one is there.',
+      '  Setup: a numbered connection checklist naming the system, who has the admin rights, what to switch on, and how to test it worked.',
+      '  Workflow redesign: the new sequence of steps, each marked "(person)" or "(Claude)", with a before and after line on how long the stage takes.',
+      '"firstRun": the first message the person sends once the artefact exists, with a real-looking example input named in square brackets. Two to five sentences.',
+      '"connectors": the Claude connectors, integrations or files needed, by name. Empty array when it needs none.',
+      '"watchOut": one sentence on the thing most likely to go wrong the first time, and what to do about it.',
+      'RULES:',
+      '- Use only what the opportunity and the context above actually say. Where a detail is unknown, write a named placeholder in square brackets, for example [the shared AP mailbox], rather than inventing a fact.',
+      '- Never invent a system, a person, a volume or a deadline that is not given.',
+      '- Australian English. Plain words a person who has never written a prompt can follow. No em dashes.',
+      '- Return "id" exactly as given so each pack matches its opportunity.',
+      'OPPORTUNITIES:',
+      JSON.stringify(rows, null, 1),
+      'Reply with only JSON: {"packs":[{"id":"","title":"","kind":"","artefactName":"","interview":"","artefact":"","firstRun":"","connectors":[""],"watchOut":""}]}'
+    ].join('\n\n');
+  }
+
+  /* Two ideas per request keeps each reply well inside the token ceiling and
+     the function timeout; three requests run at a time. */
+  function generatePrompts(list) {
+    if (RUN.packing) { toast('Already writing. Give it a moment.'); return Promise.resolve(); }
+    if (!aiAvailable()) { toast('AI is off. Add a key in Settings, or set ANTHROPIC_API_KEY on the server.'); return Promise.resolve(); }
+    var ops = (list && list.length) ? list : packCandidates();
+    if (!ops.length) { toast('Nothing on the board to write prompts for yet'); return Promise.resolve(); }
+    var chunks = []; for (var i = 0; i < ops.length; i += 2) chunks.push(ops.slice(i, i + 2));
+    var map = Object.assign({}, packs()), done = 0, failed = 0, next = 0;
+    RUN.packing = { total: ops.length, done: 0 };
+    setAiStatus('busy', 'Claude is writing prompts and skills…');
+    renderIfPrompts();
+    log('Writing prompts and skills for ' + ops.length + ' idea' + (ops.length === 1 ? '' : 's'));
+
+    function runOne() {
+      if (next >= chunks.length) return Promise.resolve();
+      var chunk = chunks[next++];
+      return askJSON(promptsPrompt(chunk), 'prompts').then(function (j) {
+        var got = (j && j.packs) || [];
+        got.forEach(function (pk) {
+          var o = findOp(pk.id) || chunk.filter(function (x) { return norm(x.title) === norm(pk.title); })[0];
+          if (!o) return;
+          map[o.id] = { id: o.id, title: o.title, kind: pk.kind || o.build, artefactName: pk.artefactName || '',
+            interview: pk.interview || '', artefact: pk.artefact || '', firstRun: pk.firstRun || '',
+            connectors: Array.isArray(pk.connectors) ? pk.connectors : [], watchOut: pk.watchOut || '', writtenAt: now() };
+          done++;
+        });
+      }).catch(function (e) {
+        failed += chunk.length;
+        log('Prompt pack error: ' + (e && (e.code + ' ' + e.message)));
+      }).then(function () {
+        RUN.packing.done = done + failed;
+        renderIfPrompts();
+        return runOne();
+      });
+    }
+
+    var lanes = []; for (var n = 0; n < Math.min(3, chunks.length); n++) lanes.push(runOne());
+    return Promise.all(lanes).then(function () {
+      return savePacks(map);
+    }).then(function () {
+      RUN.packing = null;
+      setAiStatus(RUN.source !== 'none' ? 'live' : 'idle');
+      log('Prompt packs written: ' + done + (failed ? ', failed: ' + failed : ''));
+      toast(done ? done + ' prompt pack' + (done === 1 ? '' : 's') + ' ready' + (failed ? ', ' + failed + ' failed' : '') : 'Nothing came back. Check the AI line in the sidebar.');
+      render();
+    });
+  }
+  function renderIfPrompts() { if (UI.view === 'prompts') render(); }
 
   /* ------------------------------------------------------ opportunities -- */
   function norm(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim(); }
@@ -565,7 +675,7 @@
   }
   function render() {
     var root = $('#view');
-    var fn = { runsheet: vRunsheet, systems: vSystems, process: vProcess, opportunities: vOpportunities, second: vSecond, live: vLive, settings: vSettings }[UI.view] || vRunsheet;
+    var fn = { runsheet: vRunsheet, systems: vSystems, process: vProcess, opportunities: vOpportunities, second: vSecond, prompts: vPrompts, live: vLive, settings: vSettings }[UI.view] || vRunsheet;
     if (UI.view === 'second' && S.revealed) {
       var sig = secondSig();
       if (UI.sc && root.getAttribute('data-sc-sig') === sig && root.firstChild) return;
@@ -699,6 +809,7 @@
       (MODE.role === 'participant' ? '<span class="chip chip--dots" id="dotsLeft" data-tip="Votes you still have to spend. One dot is one vote. Press plus on an idea to spend one, minus to take it back." data-who="room">' + dotsLeft() + ' of ' + maxDots() + ' votes left</span><button class="btn btn--primary" data-action="newidea" data-tip="Add an idea of your own. It lands on the board for everyone with your name on it." data-who="room">Add an idea</button>' : '') +
       '<button class="btn fac" data-action="newop">Add</button><button class="btn part-hide' + (MODE.role === 'participant' ? '' : ' btn--primary') + '" data-action="export">Export Excel</button>' +
       '<button class="btn btn--ghost btn--sm fac" data-action="exportjson">JSON</button><button class="btn btn--ghost btn--sm fac" data-action="importjson">Import</button>');
+    html += voteControls();
     html += '<div class="toolbar"><div class="seg" id="fnFilter">' + ['All'].concat(CFG.functionsTags).map(function (f) { return '<button aria-pressed="' + (UI.filter.fn === f) + '" data-f="' + f + '">' + f + '</button>'; }).join('') + '</div>' +
       '<select id="stFilter"><option>All</option>' + CFG.statuses.map(function (s) { return '<option' + (UI.filter.status === s ? ' selected' : '') + '>' + s + '</option>'; }).join('') + '</select>' +
       '<input type="search" id="qFilter" placeholder="Search" value="' + esc(UI.filter.q) + '"><span class="muted small">' + ops.length + ' of ' + S.opportunities.length + '</span></div>';
@@ -720,6 +831,32 @@
       '</div><div class="op__side">' + voteBox(o) +
       '<div class="row fac"><button class="btn btn--sm btn--ghost" data-action="edit" data-id="' + o.id + '">Edit</button>' + (o.status === 'Validated' ? '' : '<button class="btn btn--sm btn--ghost" data-action="validate" data-id="' + o.id + '">Validate</button>') + '</div>' +
       (MODE.role === 'participant' && canEdit(o) ? '<div class="row"><button class="btn btn--sm btn--ghost" data-action="editidea" data-id="' + o.id + '">Edit or delete</button></div>' : '') + '</div></div>';
+  }
+  /* The two things a facilitator reaches for mid-session: wipe the votes so
+     the room can vote again on a shorter list, and hand everyone more votes.
+     Both sit on the board itself, not three clicks away in Settings. */
+  function voteControls() {
+    if (MODE.role === 'participant') return '';
+    var total = S.opportunities.reduce(function (n, o) { return n + (o.votes || 0); }, 0);
+    var voted = S.opportunities.filter(function (o) { return (o.votes || 0) > 0; }).length;
+    return '<div class="votebar part-hide">' +
+      '<span class="votebar__k">Voting</span>' +
+      '<span class="muted small">' + total + ' vote' + (total === 1 ? '' : 's') + ' cast across ' + voted + ' idea' + (voted === 1 ? '' : 's') + '</span>' +
+      (SBA() ? '<label class="votebar__dots">Votes each <input id="roomDots" type="number" min="1" value="' + esc(String(maxDots())) + '"></label>' +
+        '<button class="btn btn--sm" data-action="savedots" data-who="you">Save</button>' : '') +
+      '<button class="btn btn--sm btn--ghost btn--danger" data-action="resetvotes" data-who="you">Reset votes</button>' +
+      '</div>';
+  }
+  function resetVotes() {
+    var total = S.opportunities.reduce(function (n, o) { return n + (o.votes || 0); }, 0);
+    if (!total) { toast('No votes to clear'); return; }
+    if (!confirm('Clear all ' + total + ' vote' + (total === 1 ? '' : 's') + ' on this board? The ideas stay. Everyone can vote again straight away. This cannot be undone.')) return;
+    if (SBA()) {
+      SB.resetVotes().then(function (n) { if (n !== null) toast('Votes cleared. The room can vote again.'); });
+      return;
+    }
+    S.opportunities.forEach(function (o) { o.votes = 0; o.myDots = 0; });
+    save(); render(); toast('Votes cleared. The room can vote again.');
   }
   function maxDots() { return (SBA() && SB.ws && SB.ws.max_dots) || 3; }
   function dotsLeft() { var used = 0; S.opportunities.forEach(function (o) { used += o.myDots || 0; }); return Math.max(0, maxDots() - used); }
@@ -778,6 +915,50 @@
     });
     html += '</div>';
     return html;
+  }
+
+  /* Prompts and skills. One card per idea: the interview that gets the detail
+     out of the owner, the artefact itself, and the first message to send. */
+  function vPrompts() {
+    var map = packs();
+    var ops = packCandidates();
+    var withPack = ops.filter(function (o) { return map[o.id]; });
+    var without = ops.filter(function (o) { return !map[o.id]; });
+    var busy = !!RUN.packing;
+    var html = head('Prompts and skills',
+      'For every idea the room landed on: a prompt that interviews the owner, the skill or scheduled task itself, and the first message to send. Written by Claude from this board.',
+      '<button class="btn btn--primary part-hide" data-action="genprompts"' + (busy ? ' disabled' : '') + '>' +
+        (busy ? 'Writing ' + RUN.packing.done + ' of ' + RUN.packing.total + '…' : without.length ? 'Generate for ' + without.length + ' idea' + (without.length === 1 ? '' : 's') : 'Write them again') + '</button>' +
+      (withPack.length ? '<button class="btn part-hide" data-action="genpromptsall"' + (busy ? ' disabled' : '') + ' data-who="you">Redo all</button>' : '') +
+      '<button class="btn btn--ghost btn--sm part-hide" data-action="export">Export Excel</button>');
+
+    if (!ops.length) return html + '<div class="empty"><b>Nothing to write for yet.</b><br>Prompts are written from the ideas on the board. Capture a few first, then come back.</div>';
+    if (!withPack.length && !busy) {
+      return html + '<div class="empty"><b>' + ops.length + ' idea' + (ops.length === 1 ? '' : 's') + ' ready.</b><br>' +
+        'Press Generate. Claude reads each one and writes the interview prompt, the skill or scheduled task, and the first message to send. It takes a minute or two.' +
+        (aiAvailable() ? '' : '<br><br><b>AI is off.</b> Add an Anthropic key in Settings, or set ANTHROPIC_API_KEY on the server.') + '</div>';
+    }
+    html += '<div class="packs">' + withPack.map(function (o) { return packCard(o, map[o.id]); }).join('') + '</div>';
+    if (without.length) html += '<p class="muted small" style="margin-top:var(--sc-4)">' + without.length + ' idea' + (without.length === 1 ? ' has' : 's have') + ' no pack yet: ' + without.map(function (o) { return esc(o.id); }).join(', ') + '.</p>';
+    return html;
+  }
+  function packCard(o, pk) {
+    var parts = [
+      ['interview', 'Interview prompt', 'Paste this into Claude. It interviews the person who owns the work and pulls out what the board never captured.', pk.interview],
+      ['artefact', (pk.kind || o.build) + ': ' + (pk.artefactName || 'the artefact'), 'The thing itself, ready to paste.', pk.artefact],
+      ['firstRun', 'First message', 'What to send once it exists.', pk.firstRun]
+    ].filter(function (x) { return x[3]; });
+    return '<div class="pack" data-op="' + esc(o.id) + '">' +
+      '<div class="pack__head"><div><div class="op__id">' + esc(o.id) + '</div><h3>' + esc(o.title) + '</h3>' +
+        '<div class="op__meta">' + chip('chip--fn-' + o.fn, o.fn) + chip('', pk.kind || o.build) + chip('chip--status-' + o.status, o.status) + chip('', o.votes + ' vote' + (o.votes === 1 ? '' : 's')) +
+        ((pk.connectors || []).length ? chip('', 'Needs: ' + pk.connectors.join(', ')) : '') + '</div></div>' +
+        '<button class="btn btn--sm btn--ghost part-hide" data-action="genprompt" data-id="' + esc(o.id) + '" data-who="you">Rewrite</button></div>' +
+      (pk.watchOut ? '<p class="pack__watch"><b>Watch out:</b> ' + esc(pk.watchOut) + '</p>' : '') +
+      parts.map(function (x) {
+        return '<details class="pack__part"' + (x[0] === 'interview' ? ' open' : '') + '><summary>' + esc(x[1]) + '<span class="muted small"> ' + esc(x[2]) + '</span></summary>' +
+          '<div class="pack__actions"><button class="btn btn--sm" data-action="copypack" data-id="' + esc(o.id) + '" data-part="' + x[0] + '">Copy</button></div>' +
+          '<pre class="pack__text" id="pack-' + esc(o.id) + '-' + x[0] + '">' + esc(x[3]) + '</pre></details>';
+      }).join('') + '</div>';
   }
 
   function vLive() {
@@ -946,13 +1127,25 @@
     var ideas = CFG.blindSpots.concat(S.secondAI).map(function (i) { return { ID: i.id, Idea: i.title, Function: i.fn, 'Process phase': i.phase, 'Claude surface': i.surface, 'Build type': i.build, 'What it is': i.what, 'Why they did not raise it': i.why, 'How it lifts the north star': i.lift, Comparator: i.comparator, Confidence: i.confidence, Origin: i.id.charAt(0) === 'A' ? 'Claude, from the transcript' : 'Consultant, prepared' }; });
     var ws2 = XLSX.utils.json_to_sheet(ideas); ws2['!cols'] = [5, 44, 11, 28, 16, 16, 60, 60, 30, 30, 10, 22].map(function (w) { return { wch: w }; });
     XLSX.utils.book_append_sheet(wb, ws2, 'New Ideas');
+    var packRows = packCandidates().filter(function (o) { return packs()[o.id]; }).map(function (o) {
+      var pk = packs()[o.id];
+      return { ID: o.id, Opportunity: o.title, Function: o.fn, 'Build type': pk.kind || o.build, 'Artefact name': pk.artefactName || '',
+        Votes: o.votes, Status: o.status, Owner: o.owner,
+        'Interview prompt (paste into Claude)': pk.interview || '', 'The artefact (skill, task or instructions)': pk.artefact || '',
+        'First message to send': pk.firstRun || '', 'Connectors needed': (pk.connectors || []).join(', '), 'Watch out for': pk.watchOut || '' };
+    });
+    if (packRows.length) {
+      var wsP = XLSX.utils.json_to_sheet(packRows);
+      wsP['!cols'] = [6, 44, 11, 16, 26, 6, 11, 14, 90, 90, 60, 30, 60].map(function (w) { return { wch: w }; });
+      XLSX.utils.book_append_sheet(wb, wsP, 'Prompts and Skills');
+    }
     var ws3 = XLSX.utils.json_to_sheet(S.systems.map(function (s) { return { System: s.name, Category: s.category, 'Used by': s.usedBy, 'Claude reach': s.connector, Status: s.status, Note: s.note }; }));
     ws3['!cols'] = [18, 16, 20, 26, 10, 60].map(function (w) { return { wch: w }; });
     XLSX.utils.book_append_sheet(wb, ws3, 'Systems');
     var ws4 = XLSX.utils.json_to_sheet(CFG.phases.map(function (p) { return { Phase: p.name, Function: p.fn, 'What happens': p.what, '# opportunities': opCountFor(p.name).length }; }));
     ws4['!cols'] = [34, 11, 70, 14].map(function (w) { return { wch: w }; });
     XLSX.utils.book_append_sheet(wb, ws4, 'Lifecycle Map');
-    var ws5 = XLSX.utils.aoa_to_sheet([['AI opportunity workshop: ' + CFG.client.name + ', ' + teamsSentence()], ['Exported', new Date().toLocaleString('en-AU', { timeZone: 'Australia/Melbourne' })], ['North star', CFG.client.northStar], ['Scope criterion', CFG.client.scopeCriterion], [], ['Tabs', 'Opportunity Register (client-raised and AI-heard), New Ideas (the second viewpoint), Systems, Lifecycle Map'], ['Scoring', 'Client owns Value; consultant owns Ease. Fill the two columns in the register, then build the 2x2 in the prioritisation session.']]);
+    var ws5 = XLSX.utils.aoa_to_sheet([['AI opportunity workshop: ' + CFG.client.name + ', ' + teamsSentence()], ['Exported', new Date().toLocaleString('en-AU', { timeZone: 'Australia/Melbourne' })], ['North star', CFG.client.northStar], ['Scope criterion', CFG.client.scopeCriterion], [], ['Tabs', 'Opportunity Register (client-raised and AI-heard), New Ideas (the second viewpoint)' + (packRows.length ? ', Prompts and Skills (what to paste into Claude to build each one)' : '') + ', Systems, Lifecycle Map'], ['Scoring', 'Client owns Value; consultant owns Ease. Fill the two columns in the register, then build the 2x2 in the prioritisation session.']]);
     ws5['!cols'] = [{ wch: 18 }, { wch: 100 }];
     XLSX.utils.book_append_sheet(wb, ws5, 'Read Me');
     var out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
@@ -972,7 +1165,7 @@
   }
   function anchorDownload(name, blob) { var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 2000); toast('Exported ' + name); }
   function fileStem() { return String((CFG.client && (CFG.client.short || CFG.client.name)) || 'board').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30) || 'board'; }
-  function exportJson() { deliverFile(fileStem() + '-board-' + new Date().toISOString().slice(0, 10) + '.json', new Blob([JSON.stringify({ opportunities: S.opportunities, systems: S.systems, secondAI: S.secondAI, transcript: S.transcript }, null, 2)], { type: 'application/json' })); }
+  function exportJson() { deliverFile(fileStem() + '-board-' + new Date().toISOString().slice(0, 10) + '.json', new Blob([JSON.stringify({ opportunities: S.opportunities, systems: S.systems, secondAI: S.secondAI, promptPacks: packs(), transcript: S.transcript }, null, 2)], { type: 'application/json' })); }
   function importJson() {
     var inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'application/json';
     inp.onchange = function () { var f = inp.files[0]; if (!f) return; f.text().then(function (t) { var j = JSON.parse(t); var n = 0; (j.opportunities || []).forEach(function (o) { if (addOpportunity(Object.assign({}, o, { function: o.fn || o.function }), o.source || 'Room')) n++; }); if (j.systems) S.systems = j.systems; save(); render(); toast('Imported ' + n + ' opportunities'); }).catch(function () { toast('That file did not parse'); }); };
@@ -1029,8 +1222,8 @@
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') { closeSheet(); closeHelp(); hideBigQr(); return; }
       if (e.target.matches('input,textarea,select,[contenteditable]') || $('#sheet').classList.contains('open') || $('#help').classList.contains('open')) return;
-      var map = { '1': 'runsheet', '2': 'systems', '3': 'process', '4': 'opportunities', '5': 'second', '6': 'live', '7': 'settings' };
-      if (map[e.key]) { if ((UI.present || MODE.role === 'participant') && (e.key === '1' || e.key === '6' || e.key === '7')) return; go(map[e.key]); }
+      var map = { '1': 'runsheet', '2': 'systems', '3': 'process', '4': 'opportunities', '5': 'second', '6': 'prompts', '7': 'live', '8': 'settings' };
+      if (map[e.key]) { if ((UI.present || MODE.role === 'participant') && (e.key === '1' || e.key === '7' || e.key === '8')) return; go(map[e.key]); }
       else if (e.key === 'p' || e.key === 'P') togglePresent();
       else if (e.key === ' ') { e.preventDefault(); toggleTimer(); }
       else if (e.key === 'n' || e.key === 'N') gotoBlock(S.agendaIdx + 1);
@@ -1050,6 +1243,11 @@
       case 'validate': var o = findOp(b.dataset.id); if (o) { o.status = 'Validated'; save(); render(); pushOp(o, ['status']); } break;
       case 'vote': var op = findOp(b.dataset.id); if (op) { if (SBA()) { if (op.uid) SB.vote(op.uid, parseInt(b.dataset.d, 10)); } else { op.votes = Math.max(0, op.votes + parseInt(b.dataset.d, 10)); save(); render(); } } break;
       case 'newidea': openSheet('idea', null); break;
+      case 'resetvotes': resetVotes(); break;
+      case 'genprompts': generatePrompts(); break;
+      case 'genpromptsall': if (confirm('Write every pack again from scratch? The ones on the board now are replaced.')) { savePacks({}).then(function () { render(); generatePrompts(); }); } break;
+      case 'genprompt': var po = findOp(b.dataset.id); if (po) generatePrompts([po]); break;
+      case 'copypack': var el = $('#pack-' + b.dataset.id + '-' + b.dataset.part); if (el) copyText(el.textContent); break;
       case 'export': exportXlsx(); break;
       case 'exportjson': exportJson(); break;
       case 'importjson': importJson(); break;
@@ -1063,7 +1261,7 @@
       case 'adoptphase': var np = { fn: CFG.functionsTags.indexOf(b.dataset.fn) >= 0 ? b.dataset.fn : CFG.functionsTags[0], name: b.dataset.name, what: '', prompts: [] }; if (SBA()) SB.insertPhase(np).catch(function () {}); else { CFG.phases.push(Object.assign({ id: 'p' + uid() }, np)); render(); } toast('Phase added'); break;
       case 'editidea': openSheet('idea', b.dataset.id); break;
       case 'savename': var nm = (($('#a_name') || {}).value || '').trim(); if (!nm) { toast('Type your name first'); return; } SB.setName(nm).then(function () { enterWorkshop({ ok: true }); }).catch(function () {}); break;
-      case 'savedots': var nd = parseInt(($('#setDots') || {}).value, 10); if (!(nd >= 1)) { toast('Votes per person must be 1 or more'); return; } SB.updateWorkshop({ max_dots: nd }).then(function () { toast('Everyone now has ' + nd + ' vote' + (nd === 1 ? '' : 's')); }).catch(function () {}); break;
+      case 'savedots': var dotsEl = b.closest('.votebar') ? $('#roomDots') : $('#setDots'); var nd = parseInt((dotsEl || {}).value, 10); if (!(nd >= 1)) { toast('Votes per person must be 1 or more'); return; } SB.updateWorkshop({ max_dots: nd }).then(function () { toast('Everyone now has ' + nd + ' vote' + (nd === 1 ? '' : 's')); }).catch(function () {}); break;
       case 'startblank': startBlank(); break;
       case 'bigqr': showBigQr(); break;
       case 'closeqr': hideBigQr(); break;

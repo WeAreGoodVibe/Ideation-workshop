@@ -11,6 +11,7 @@
 --   phases          the process phases for a workshop (anyone in the room can add)
 --   opportunities   the register
 --   votes           dot votes, one row per person per idea, budget enforced
+--                   (reset_votes clears them so the room can vote again)
 --   transcript_chunks  facilitator-only transcript
 --   second_ideas    the second viewpoint (prepared + AI-written)
 --   workshop_secrets   bridge token for a Claude session that writes transcript
@@ -341,6 +342,25 @@ begin
   return cur;
 end; $$;
 
+-- Wipe the votes so the room can vote again. Facilitators only.
+-- p_opp null clears the whole workshop; give it an opportunity id to clear
+-- just that one. Row level security lets a person delete only their own vote
+-- rows, so this has to be security definer with the facilitator check in it.
+create or replace function public.reset_votes(p_ws uuid, p_opp uuid default null)
+returns int language plpgsql security definer set search_path = public as $$
+declare n int;
+begin
+  if auth.uid() is null then raise exception 'not signed in'; end if;
+  if not public.ws_facilitator(p_ws) then raise exception 'facilitators only'; end if;
+  if p_opp is null then
+    delete from votes where workshop_id = p_ws;
+  else
+    delete from votes where workshop_id = p_ws and opportunity_id = p_opp;
+  end if;
+  get diagnostics n = row_count;
+  return n;
+end; $$;
+
 -- Who am I in this org, and what can I do.
 create or replace function public.my_role(p_ws uuid) returns text
 language sql stable security definer set search_path = public as $$
@@ -452,6 +472,7 @@ grant usage on schema public to anon, authenticated;
 grant select on public.vote_tallies to authenticated;
 grant execute on function public.join_workshop(text, text, text) to authenticated;
 grant execute on function public.cast_vote(uuid, int) to authenticated;
+grant execute on function public.reset_votes(uuid, uuid) to authenticated;
 grant execute on function public.my_role(uuid) to authenticated;
 
 -- -------------------------------------------------------------- realtime --
@@ -483,4 +504,4 @@ revoke execute on all functions in schema public from public, anon;
 revoke execute on function public.touch_updated_at(), public.opportunity_seq(), public.check_vote_budget(), public.org_creator_is_facilitator(), public.workshop_after_insert(), public.stamp_created_by() from authenticated;
 alter function public.touch_updated_at() set search_path = public;
 alter function public.opportunity_seq() set search_path = public;
-grant execute on function public.is_member(uuid), public.is_facilitator(uuid), public.workshop_org(uuid), public.ws_member(uuid), public.ws_facilitator(uuid), public.join_workshop(text, text, text), public.cast_vote(uuid, int), public.my_role(uuid) to authenticated;
+grant execute on function public.is_member(uuid), public.is_facilitator(uuid), public.workshop_org(uuid), public.ws_member(uuid), public.ws_facilitator(uuid), public.join_workshop(text, text, text), public.cast_vote(uuid, int), public.reset_votes(uuid, uuid), public.my_role(uuid) to authenticated;

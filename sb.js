@@ -13,7 +13,7 @@
      SB.user, SB.role, SB.ws, SB.active
      writes: insertOpportunity, updateOpportunity, deleteOpportunity, vote,
              insertPhase, updatePhase, deletePhase, setName,
-             insertSystem, updateSystem, deleteSystem, updateWorkshop, clearPrepared,
+             resetVotes, insertSystem, updateSystem, deleteSystem, updateWorkshop, clearPrepared,
              addTranscript, setAIIdeas, api(mode, prompt)
      admin:  listOrgs, createOrg, listWorkshops, createWorkshop, members,
              bridgeToken, sendLink, joinAnonymously, isAnon, signOut
@@ -184,6 +184,24 @@ window.SB = (function () {
     if (r.error) { emit('toast', /budget/.test(r.error.message) ? 'No dots left. Take one back from another idea first.' : 'Vote failed: ' + r.error.message); return null; }
     refresh('opportunities'); return r.data;
   }
+  /* Clear the room's votes so it can vote again, or give one idea a clean
+     slate. Facilitators only; the database function enforces that, not this.
+     An older database has no reset_votes yet, so say what to run rather than
+     failing with a function-not-found code nobody can read. */
+  async function resetVotes(oppUid) {
+    var r = await client.rpc('reset_votes', { p_ws: ws.id, p_opp: oppUid || null });
+    if (r.error) {
+      var m = r.error.message || '';
+      if (r.error.code === 'PGRST202' || /reset_votes/.test(m) && /(does not exist|not find|schema cache)/i.test(m)) {
+        emit('toast', 'The database does not have reset_votes yet. Run supabase/migration-002-reset-votes.sql in the Supabase SQL editor.');
+      } else {
+        emit('toast', 'Could not reset the votes: ' + m);
+      }
+      return null;
+    }
+    refresh('opportunities');
+    return r.data;
+  }
   function sourceFor(given) { return given || (role === 'facilitator' ? 'Facilitator' : 'Participant'); }
   async function insertSystem(s) { var r = await client.from('systems').insert({ workshop_id: ws.id, name: s.name, category: s.category || '', used_by: s.usedBy || '', connector: s.connector || '', status: s.status || 'assumed', note: s.note || '', sort: s.sort || 99, source: sourceFor(s.source), added_by: s.source === 'AI' ? 'Claude' : myName() }); if (r.error) fail(r.error, 'Could not add'); refresh('systems'); }
   async function insertPhase(p) { var r = await client.from('phases').insert({ workshop_id: ws.id, fn: p.fn || '', name: p.name, what: p.what || '', prompts: p.prompts || [], sort: p.sort || 99, source: sourceFor(p.source), added_by: p.source === 'AI' ? 'Claude' : myName() }); if (r.error) fail(r.error, 'Could not add'); refresh('phases'); }
@@ -242,6 +260,7 @@ window.SB = (function () {
     sendLink: sendLink, signOut: signOut, openWorkshop: openWorkshop, joinWithCode: joinWithCode, joinAnonymously: joinAnonymously, isAnon: isAnon, refreshAll: refreshAll, myName: myName, setName: setName,
     insertPhase: insertPhase, updatePhase: updatePhase, deletePhase: deletePhase,
     insertOpportunity: insertOpportunity, updateOpportunity: updateOpportunity, deleteOpportunity: deleteOpportunity, vote: vote,
+    resetVotes: resetVotes,
     insertSystem: insertSystem, updateSystem: updateSystem, deleteSystem: deleteSystem, updateWorkshop: updateWorkshop, clearPrepared: clearPrepared,
     addTranscript: addTranscript, setAIIdeas: setAIIdeas, api: api,
     listOrgs: listOrgs, createOrg: createOrg, listWorkshops: listWorkshops, createWorkshop: createWorkshop, members: members, bridgeToken: bridgeToken, myVotesUsed: myVotesUsed
