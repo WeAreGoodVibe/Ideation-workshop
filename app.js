@@ -494,9 +494,36 @@
     var max = 0; S.opportunities.forEach(function (o) { var n = parseInt(String(o.id).replace(/\D/g, ''), 10); if (n > max) max = n; });
     return 'O' + (max + 1);
   }
+  /* The one rule for "this is the same idea": an exact match on the
+     normalised title, or one title containing the other once it is long
+     enough for that to mean something. addOpportunity refuses a duplicate on
+     it, and the second viewpoint reads the same rule to know an idea has
+     already landed, so the two can never drift apart. */
+  function sameIdea(existingNorm, incomingNorm) {
+    return existingNorm === incomingNorm ||
+      (existingNorm.length > 12 && (existingNorm.indexOf(incomingNorm) >= 0 || incomingNorm.indexOf(existingNorm) >= 0));
+  }
+  /* The opportunity a second viewpoint idea became, or null while it is still
+     only an idea. Read from the board itself rather than a flag, so it stays
+     honest if the opportunity is later deleted or renamed. */
+  function promotedAs(idea) {
+    var t = norm(idea && idea.title); if (!t) return null;
+    for (var i = 0; i < S.opportunities.length; i++) {
+      if (sameIdea(norm(S.opportunities[i].title), t)) return S.opportunities[i];
+    }
+    return null;
+  }
+  function addedWhen(ts) {
+    if (!ts) return '';
+    var d = new Date(ts), opts = { hour: 'numeric', minute: '2-digit', timeZone: 'Australia/Melbourne' };
+    var today = new Date().toLocaleDateString('en-AU', { timeZone: 'Australia/Melbourne' });
+    if (d.toLocaleDateString('en-AU', { timeZone: 'Australia/Melbourne' }) !== today) { opts.day = 'numeric'; opts.month = 'short'; }
+    return d.toLocaleString('en-AU', opts).replace(/\s?(am|pm)/i, function (m) { return m.toLowerCase(); });
+  }
+
   function addOpportunity(o, source) {
     var t = norm(o.title); if (!t) return false;
-    var dup = S.opportunities.some(function (x) { var y = norm(x.title); return y === t || (y.length > 12 && (y.indexOf(t) >= 0 || t.indexOf(y) >= 0)); });
+    var dup = S.opportunities.some(function (x) { return sameIdea(norm(x.title), t); });
     if (dup) return false;
     var phase = String(o.phase || '').trim();
     var row = {
@@ -670,8 +697,11 @@
      moment they scroll back up. */
   function secondSig() {
     var raised = S.opportunities.filter(function (o) { return o.status !== 'Merged' && o.status !== 'Parked'; });
+    var ideas = (CFG.blindSpots || []).concat(S.secondAI || []);
     return JSON.stringify([UI.seq, MODE.role, raised.length, raised.map(function (o) { return o.fn; }).sort().join(''),
-      CFG.blindSpots.map(function (i) { return i.id; }).join('|'), S.secondAI.map(function (i) { return i.id + i.title; }).join('|')]);
+      CFG.blindSpots.map(function (i) { return i.id; }).join('|'), S.secondAI.map(function (i) { return i.id + i.title; }).join('|'),
+      /* which ideas have landed on the board, so the card state cannot go stale */
+      ideas.map(function (i) { var on = promotedAs(i); return on ? i.id + '>' + on.id : ''; }).join('|')]);
   }
   function render() {
     var root = $('#view');
@@ -906,12 +936,12 @@
       '<div class="row fac"><button class="btn btn--ghost btn--sm" data-action="regen">Ask Claude again</button><button class="btn btn--ghost btn--sm" data-action="reseal">Re-seal</button></div></div>';
     html += '<div class="grid grid--2" data-sc-in data-sc-stagger="70">';
     ideas.forEach(function (i) {
-      html += '<div class="card idea"><div><div class="op__meta" style="margin:0 0 8px">' + chip('chip--fn-' + (i.fn || 'Both'), i.fn || 'Both') + chip('', i.surface) + chip('', i.build) + chip(i.fromAI ? 'chip--src-AI' : 'chip--src-Consultant', i.fromAI ? 'Claude, today' : 'Consultant') + chip('', i.confidence + ' confidence') + '</div><h3>' + esc(i.title) + '</h3></div>' +
+      html += '<div class="card idea' + (promotedAs(i) ? ' idea--added' : '') + '"><div><div class="op__meta" style="margin:0 0 8px">' + chip('chip--fn-' + (i.fn || 'Both'), i.fn || 'Both') + chip('', i.surface) + chip('', i.build) + chip(i.fromAI ? 'chip--src-AI' : 'chip--src-Consultant', i.fromAI ? 'Claude, today' : 'Consultant') + chip('', i.confidence + ' confidence') + '</div><h3>' + esc(i.title) + '</h3></div>' +
         '<div class="idea__row"><span class="k">What</span><span>' + esc(i.what) + '</span></div>' +
         '<div class="idea__why"><b>Why you did not raise it:</b> ' + esc(i.why) + '</div>' +
         (i.lift ? '<div class="idea__row"><span class="k">Lift</span><span>' + esc(i.lift) + '</span></div>' : '') +
         (i.comparator ? '<div class="idea__row"><span class="k">Seen at</span><span>' + esc(i.comparator) + '</span></div>' : '') +
-        '<div class="row fac"><button class="btn btn--sm" data-action="promote" data-id="' + esc(i.id) + '">Put it on the board</button></div></div>';
+        ideaFoot(i) + '</div>';
     });
     html += '</div>';
     return html;
@@ -959,6 +989,17 @@
           '<div class="pack__actions"><button class="btn btn--sm" data-action="copypack" data-id="' + esc(o.id) + '" data-part="' + x[0] + '">Copy</button></div>' +
           '<pre class="pack__text" id="pack-' + esc(o.id) + '-' + x[0] + '">' + esc(x[3]) + '</pre></details>';
       }).join('') + '</div>';
+  }
+
+  /* Once an idea is on the board the button is replaced, not just disabled:
+     the room needs to see which of these were taken, and when. Everyone sees
+     this, unlike the button, which is the facilitator's. */
+  function ideaFoot(i) {
+    var on = promotedAs(i);
+    if (!on) return '<div class="row fac"><button class="btn btn--sm" data-action="promote" data-id="' + esc(i.id) + '">Put it on the board</button></div>';
+    var when = addedWhen(on.createdAt);
+    return '<div class="idea__added"><span class="chip chip--added">Added to opportunities as ' + esc(on.id) + '</span>' +
+      (when ? '<span class="small muted">' + esc(when) + '</span>' : '') + '</div>';
   }
 
   function vLive() {
@@ -1284,7 +1325,7 @@
       case 'createws': adminCreateWorkshop(); break;
       case 'showtoken': SB.bridgeToken().then(function (t) { var el = $('#bridgeToken'); if (el) el.textContent = t; }); break;
       case 'copytoken': SB.bridgeToken().then(copyText); break;
-      case 'promote': var idea = CFG.blindSpots.concat(S.secondAI).filter(function (i) { return i.id === b.dataset.id; })[0]; if (idea) { var ok = addOpportunity({ title: idea.title, function: idea.fn, phase: idea.phase, surface: idea.surface, build: idea.build, pain: '', direction: idea.what, systems: [], quote: '', raisedBy: idea.id.charAt(0) === 'A' ? 'Claude' : 'Consultant', notes: 'Why not raised: ' + idea.why, confidence: idea.confidence }, 'Consultant'); save(); toast(ok ? 'On the board' : 'Already on the board'); } break;
+      case 'promote': var idea = CFG.blindSpots.concat(S.secondAI).filter(function (i) { return i.id === b.dataset.id; })[0]; if (idea) { var ok = addOpportunity({ title: idea.title, function: idea.fn, phase: idea.phase, surface: idea.surface, build: idea.build, pain: '', direction: idea.what, systems: [], quote: '', raisedBy: idea.id.charAt(0) === 'A' ? 'Claude' : 'Consultant', notes: 'Why not raised: ' + idea.why, confidence: idea.confidence }, 'Consultant'); save(); toast(ok ? 'On the board' : 'Already on the board'); if (UI.view === 'second') render(); } break;
       case 'src-mic': startSpeech(); break;
       case 'src-wispr': startWispr(); break;
       case 'src-feed': startFeed(); break;

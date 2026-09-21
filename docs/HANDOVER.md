@@ -121,6 +121,27 @@ One trap worth knowing: `workshop_after_insert` seeds systems and second_ideas f
 
 That needed `exportXlsx` to stop reading module state directly. It now takes a bundle and falls back to the board on screen (`boardBundle()`), so `SB.loadWorkshopData(id)` can produce the same six-tab workbook for a workshop that is not open. `exportCsv` took the same treatment.
 
+## Changed on 21 September, third pass (second viewpoint shows what has landed)
+
+Pressing "Put it on the board" used to leave the card exactly as it was, so
+there was no way to tell, on a wall of fourteen ideas, which ones had been
+taken. The button is now replaced by a green "Added to opportunities as O7"
+chip and the time it landed, and the card gets a green border.
+
+It reads the board rather than storing a flag. `promotedAs(idea)` looks for an
+opportunity whose title matches, and the timestamp is that opportunity's own
+`createdAt`. So the state survives a reload, is right for ideas promoted in an
+earlier sitting, and reverts to the button if the opportunity is later deleted.
+
+The matching rule was extracted into `sameIdea()`, which `addOpportunity` now
+also uses for its duplicate check. They were the same rule written twice; if
+they had drifted, the card would have offered a button that then refused with
+"Already on the board".
+
+`secondSig()` gained the promoted state, so the render guard that protects the
+scroll engine cannot leave a stale card on screen. The `promote` action also
+re-renders when the second viewpoint is open, which local mode did not do.
+
 ## Dead ends, so the next session does not repeat them
 
 - "AI off" in the sidebar with the key present on Vercel was a stale tab or a preview domain, not a code problem. Check the URL and hard reload before touching anything.
