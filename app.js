@@ -1113,10 +1113,16 @@
   }
 
   /* ------------------------------------------------------------- export -- */
-  function exportXlsx() {
-    if (!window.XLSX) { exportCsv(); return; }
+  function boardBundle() {
+    return { client: CFG.client, teams: teamsSentence(), opportunities: S.opportunities,
+      blindSpots: CFG.blindSpots || [], secondAI: S.secondAI || [], systems: S.systems, phases: CFG.phases || [], packs: packs() };
+  }
+  function bundleStem(B) { return String((B.client && (B.client.short || B.client.name)) || 'board').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30) || 'board'; }
+  function exportXlsx(bundle) {
+    var B = bundle || boardBundle();
+    if (!window.XLSX) { exportCsv(B); return; }
     var wb = XLSX.utils.book_new();
-    var opsRows = S.opportunities.map(function (o) {
+    var opsRows = B.opportunities.map(function (o) {
       return { ID: o.id, Opportunity: o.title, Function: o.fn, 'Process phase': o.phase, Cluster: o.cluster, 'Claude surface': o.surface, 'Build type': o.build, Status: o.status,
         'Problem / pain': o.pain, 'What Claude does': o.direction, Systems: o.systems.join(', '), 'Source quote': o.quote, 'Raised by': o.raisedBy, Owner: o.owner, Source: o.source, Confidence: o.confidence, Votes: o.votes,
         'Value (client 1-5)': o.value == null ? '' : o.value, 'Ease (consultant 1-5)': o.ease == null ? '' : o.ease, Notes: o.notes, Captured: new Date(o.createdAt).toLocaleString('en-AU', { timeZone: 'Australia/Melbourne' }) };
@@ -1124,11 +1130,13 @@
     var ws1 = XLSX.utils.json_to_sheet(opsRows.length ? opsRows : [{ ID: '', Opportunity: '' }]);
     ws1['!cols'] = [6, 44, 11, 28, 16, 16, 16, 11, 50, 60, 24, 40, 14, 14, 10, 10, 6, 10, 10, 30, 20].map(function (w) { return { wch: w }; });
     XLSX.utils.book_append_sheet(wb, ws1, 'Opportunity Register');
-    var ideas = CFG.blindSpots.concat(S.secondAI).map(function (i) { return { ID: i.id, Idea: i.title, Function: i.fn, 'Process phase': i.phase, 'Claude surface': i.surface, 'Build type': i.build, 'What it is': i.what, 'Why they did not raise it': i.why, 'How it lifts the north star': i.lift, Comparator: i.comparator, Confidence: i.confidence, Origin: i.id.charAt(0) === 'A' ? 'Claude, from the transcript' : 'Consultant, prepared' }; });
+    var ideas = B.blindSpots.concat(B.secondAI).map(function (i) { return { ID: i.id, Idea: i.title, Function: i.fn, 'Process phase': i.phase, 'Claude surface': i.surface, 'Build type': i.build, 'What it is': i.what, 'Why they did not raise it': i.why, 'How it lifts the north star': i.lift, Comparator: i.comparator, Confidence: i.confidence, Origin: i.id.charAt(0) === 'A' ? 'Claude, from the transcript' : 'Consultant, prepared' }; });
     var ws2 = XLSX.utils.json_to_sheet(ideas); ws2['!cols'] = [5, 44, 11, 28, 16, 16, 60, 60, 30, 30, 10, 22].map(function (w) { return { wch: w }; });
     XLSX.utils.book_append_sheet(wb, ws2, 'New Ideas');
-    var packRows = packCandidates().filter(function (o) { return packs()[o.id]; }).map(function (o) {
-      var pk = packs()[o.id];
+    var packRows = B.opportunities.filter(function (o) { return o.status !== 'Parked' && o.status !== 'Merged' && B.packs[o.id]; })
+      .sort(function (a, b) { return (b.status === 'Validated') - (a.status === 'Validated') || (b.votes - a.votes); })
+      .map(function (o) {
+      var pk = B.packs[o.id];
       return { ID: o.id, Opportunity: o.title, Function: o.fn, 'Build type': pk.kind || o.build, 'Artefact name': pk.artefactName || '',
         Votes: o.votes, Status: o.status, Owner: o.owner,
         'Interview prompt (paste into Claude)': pk.interview || '', 'The artefact (skill, task or instructions)': pk.artefact || '',
@@ -1139,25 +1147,26 @@
       wsP['!cols'] = [6, 44, 11, 16, 26, 6, 11, 14, 90, 90, 60, 30, 60].map(function (w) { return { wch: w }; });
       XLSX.utils.book_append_sheet(wb, wsP, 'Prompts and Skills');
     }
-    var ws3 = XLSX.utils.json_to_sheet(S.systems.map(function (s) { return { System: s.name, Category: s.category, 'Used by': s.usedBy, 'Claude reach': s.connector, Status: s.status, Note: s.note }; }));
+    var ws3 = XLSX.utils.json_to_sheet(B.systems.map(function (s) { return { System: s.name, Category: s.category, 'Used by': s.usedBy, 'Claude reach': s.connector, Status: s.status, Note: s.note }; }));
     ws3['!cols'] = [18, 16, 20, 26, 10, 60].map(function (w) { return { wch: w }; });
     XLSX.utils.book_append_sheet(wb, ws3, 'Systems');
-    var ws4 = XLSX.utils.json_to_sheet(CFG.phases.map(function (p) { return { Phase: p.name, Function: p.fn, 'What happens': p.what, '# opportunities': opCountFor(p.name).length }; }));
+    var ws4 = XLSX.utils.json_to_sheet(B.phases.map(function (p) { return { Phase: p.name, Function: p.fn, 'What happens': p.what, '# opportunities': B.opportunities.filter(function (o) { return o.phase === p.name && o.status !== 'Merged'; }).length }; }));
     ws4['!cols'] = [34, 11, 70, 14].map(function (w) { return { wch: w }; });
     XLSX.utils.book_append_sheet(wb, ws4, 'Lifecycle Map');
-    var ws5 = XLSX.utils.aoa_to_sheet([['AI opportunity workshop: ' + CFG.client.name + ', ' + teamsSentence()], ['Exported', new Date().toLocaleString('en-AU', { timeZone: 'Australia/Melbourne' })], ['North star', CFG.client.northStar], ['Scope criterion', CFG.client.scopeCriterion], [], ['Tabs', 'Opportunity Register (client-raised and AI-heard), New Ideas (the second viewpoint)' + (packRows.length ? ', Prompts and Skills (what to paste into Claude to build each one)' : '') + ', Systems, Lifecycle Map'], ['Scoring', 'Client owns Value; consultant owns Ease. Fill the two columns in the register, then build the 2x2 in the prioritisation session.']]);
+    var ws5 = XLSX.utils.aoa_to_sheet([['AI opportunity workshop: ' + B.client.name + ', ' + B.teams], ['Exported', new Date().toLocaleString('en-AU', { timeZone: 'Australia/Melbourne' })], ['North star', B.client.northStar], ['Scope criterion', B.client.scopeCriterion], [], ['Tabs', 'Opportunity Register (client-raised and AI-heard), New Ideas (the second viewpoint)' + (packRows.length ? ', Prompts and Skills (what to paste into Claude to build each one)' : '') + ', Systems, Lifecycle Map'], ['Scoring', 'Client owns Value; consultant owns Ease. Fill the two columns in the register, then build the 2x2 in the prioritisation session.']]);
     ws5['!cols'] = [{ wch: 18 }, { wch: 100 }];
     XLSX.utils.book_append_sheet(wb, ws5, 'Read Me');
     var out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-    var name = fileStem() + '-AI-opportunities-' + new Date().toISOString().slice(0, 10) + '.xlsx';
+    var name = bundleStem(B) + '-AI-opportunities-' + new Date().toISOString().slice(0, 10) + '.xlsx';
     deliverFile(name, new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
   }
-  function exportCsv() {
+  function exportCsv(bundle) {
+    var B = bundle || boardBundle();
     var cols = ['id', 'title', 'fn', 'phase', 'cluster', 'surface', 'build', 'status', 'pain', 'direction', 'systems', 'quote', 'raisedBy', 'owner', 'source', 'confidence', 'votes', 'notes'];
     var q = function (v) { v = Array.isArray(v) ? v.join('; ') : String(v == null ? '' : v); return '"' + v.replace(/"/g, '""') + '"'; };
-    var lines = [cols.join(',')].concat(S.opportunities.map(function (o) { return cols.map(function (c) { return q(o[c]); }).join(','); }));
+    var lines = [cols.join(',')].concat(B.opportunities.map(function (o) { return cols.map(function (c) { return q(o[c]); }).join(','); }));
     toast('Spreadsheet library missing, exporting CSV instead');
-    deliverFile(fileStem() + '-AI-opportunities-' + new Date().toISOString().slice(0, 10) + '.csv', new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv' }));
+    deliverFile(bundleStem(B) + '-AI-opportunities-' + new Date().toISOString().slice(0, 10) + '.csv', new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv' }));
   }
   function deliverFile(name, blob) {
     if (CAP.downloads) { CAP.downloads.save({ filename: name, data: blob }).then(function () { toast('Saved ' + name); }).catch(function (e) { if (e && e.code !== 'declined') { log('download: ' + e.code); anchorDownload(name, blob); } }); return; }
@@ -1271,6 +1280,7 @@
       case 'signout': SB.signOut(); break;
       case 'openws': location.href = location.pathname + '?w=' + encodeURIComponent(b.dataset.slug); break;
       case 'delws': deleteWorkshop(b.dataset.id); break;
+      case 'dupws': duplicateWorkshop(b.dataset.id); break;
       case 'createws': adminCreateWorkshop(); break;
       case 'showtoken': SB.bridgeToken().then(function (t) { var el = $('#bridgeToken'); if (el) el.textContent = t; }); break;
       case 'copytoken': SB.bridgeToken().then(copyText); break;
@@ -1475,9 +1485,45 @@
     return new Date(t).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', timeZone: 'Australia/Melbourne' });
   }
 
+  /* The Excel workbook for a workshop that is not open, so a backup can be
+     taken without leaving Settings. */
+  function exportWorkshopXlsx(id) {
+    toast('Building the backup…');
+    return SB.loadWorkshopData(id).then(function (d) {
+      if (!d) return false;
+      var cfg = d.config || {}, client = cfg.client || { name: d.workshop.title };
+      var teams = (client.functions || []).length ? client.functions.join(' and ') + (client.functions.length === 1 ? ' team' : ' teams') : 'the team';
+      exportXlsx({ client: client, teams: teams, opportunities: d.opportunities, blindSpots: d.blindSpots,
+        secondAI: d.secondAI, systems: d.systems, phases: d.phases, packs: cfg.promptPacks || {} });
+      return true;
+    }).catch(function (e) { toast('Could not build the backup: ' + (e.message || e)); return false; });
+  }
+
+  /* Duplicate a workshop as a template for the next client. */
+  function duplicateWorkshop(id) {
+    var row = WS_ROWS[id]; if (!row) return;
+    var w = row.w;
+    var title = prompt('Name for the copy', w.title.replace(/\s*\(copy\)$/, '') + ' (copy)');
+    if (title === null) return;
+    title = String(title).trim(); if (!title) { toast('Give it a name'); return; }
+    var slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) + '-' + Math.random().toString(36).slice(2, 6);
+    var code = String(Math.floor(1000 + Math.random() * 9000));
+    toast('Copying…');
+    SB.duplicateWorkshop(id, { slug: slug, title: title, joinCode: code }).then(function (r) {
+      if (!r) return;
+      var c = r.copied;
+      toast('Copied: ' + c.systems + ' systems, ' + c.phases + ' phases, ' + c.ideas + ' prepared ideas. Join code ' + code + '.');
+      fillAdmin();
+      if (confirm('"' + title + '" is ready.\n\nIt has the systems, phases and prepared second viewpoint ideas, and none of the previous session\'s opportunities, votes or transcript.\n\nJoin code: ' + code + '\n\nOpen it now?')) {
+        location.href = location.pathname + '?w=' + encodeURIComponent(slug);
+      }
+    }).catch(function () {});
+  }
+
   /* Deleting a workshop takes the client's whole session with it, so the
      confirmation is proportionate to what is inside: an empty one goes on a
-     single yes, one with real work in it makes you type its join code. */
+     single yes, one with real work in it offers a backup first and then makes
+     you type its join code. */
   function deleteWorkshop(id) {
     var row = WS_ROWS[id]; if (!row) return;
     var w = row.w, st = row.stats;
@@ -1485,19 +1531,29 @@
     var what = st ? wsContents(st).replace(/<[^>]+>/g, '') : 'nothing';
     if (!real) {
       if (!confirm('Delete "' + w.title + '"?\n\nIt holds ' + what + '. This cannot be undone.')) return;
-    } else {
-      if (!confirm('Delete "' + w.title + '"?\n\nThis permanently destroys ' + what + '. Export it first if you want to keep it.\n\nThere is no undo and no backup.')) return;
+      finish();
+      return;
+    }
+    if (!confirm('Delete "' + w.title + '"?\n\nThis permanently destroys ' + what + '.\n\nThere is no undo.')) return;
+    var backup = confirm('Save an Excel backup of "' + w.title + '" first?\n\nOK downloads the workbook now.\nCancel skips it and goes straight to deleting.');
+    (backup ? exportWorkshopXlsx(id) : Promise.resolve(true)).then(function (okBackup) {
+      if (backup && !okBackup) { toast('Backup failed, so nothing was deleted.'); return; }
+      if (backup && !confirm('Backup downloaded. Check it saved, then press OK to delete "' + w.title + '" for good.')) return;
       var typed = prompt('To confirm, type this workshop\'s join code: ' + w.join_code);
       if (typed === null) return;
       if (String(typed).trim() !== String(w.join_code).trim()) { toast('That did not match. Nothing was deleted.'); return; }
-    }
-    var wasOpen = SB.ws && SB.ws.id === id;
-    SB.deleteWorkshop(id).then(function (ok) {
-      if (!ok) return;
-      toast('Deleted "' + w.title + '"');
-      if (wasOpen) { location.href = location.pathname; return; }
-      fillAdmin();
+      finish();
     });
+
+    function finish() {
+      var wasOpen = SB.ws && SB.ws.id === id;
+      SB.deleteWorkshop(id).then(function (ok) {
+        if (!ok) return;
+        toast('Deleted "' + w.title + '"');
+        if (wasOpen) { location.href = location.pathname; return; }
+        fillAdmin();
+      });
+    }
   }
 
   function fillAdmin() {
@@ -1519,10 +1575,11 @@
             '<td><div class="wsacts">' +
               '<button class="btn btn--sm btn--ghost" data-action="copylinkfor" data-slug="' + esc(w.slug) + '" data-code="' + esc(w.join_code) + '">Link</button>' +
               '<button class="btn btn--sm" data-action="openws" data-slug="' + esc(w.slug) + '">Open</button>' +
+              '<button class="btn btn--sm btn--ghost" data-action="dupws" data-id="' + esc(w.id) + '">Copy</button>' +
               '<button class="btn btn--sm btn--ghost btn--danger" data-action="delws" data-id="' + esc(w.id) + '">Delete</button>' +
             '</div></td></tr>';
         }).join('') + '</tbody></table>' +
-        '<p class="small muted">Opening a workshop picks it up exactly where it was left: every idea, vote, system, phase and the transcript. Nothing expires. Delete is permanent.</p>';
+        '<p class="small muted">Opening a workshop picks it up exactly where it was left: every idea, vote, system, phase and the transcript. Nothing expires. Copy makes a fresh workshop from this one\'s systems, phases and prepared ideas, leaving the session\'s own work behind. Delete offers a backup first, then is permanent.</p>';
     }).catch(function (e) { log('admin: ' + (e.message || e)); });
     if (SB.ws && SB.role === 'facilitator') SB.members().then(function (ms) {
       var el = $('#membersList'); if (!el) return;

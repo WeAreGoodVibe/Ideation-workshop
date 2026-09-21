@@ -109,6 +109,18 @@ The confirmation is proportionate. An empty workshop goes on one confirm. One ho
 
 **Reopening a workshop was already permanent and unconditional**, and is now stated in the UI. Nothing archives, expires or locks: `listWorkshops` does not filter, `openWorkshop` does not check status, and the `workshops.status` column is written once at creation and never read. A workshop is a living document; pause and come back weeks later.
 
+## Changed on 21 September, second pass (duplicate a workshop, backup before delete)
+
+Merged to main and live.
+
+**Copy a workshop as a template.** Settings → Workshops → Copy. The new workshop carries the settings, systems, process phases and prepared consultant second viewpoint ideas. It does not carry the previous session's opportunities, votes, transcript, prompt packs or the ideas Claude wrote from that transcript. Keep a prepared shell per client and start each session fresh from it.
+
+One trap worth knowing: `workshop_after_insert` seeds systems and second_ideas from `config.systems` and `config.blindSpots`. The duplicate clears both keys on the copied config before inserting and then copies the rows explicitly, otherwise every prepared item lands twice.
+
+**Backup before delete.** Deleting a workshop that holds ideas, votes or a transcript now offers an Excel backup first, waits for you to confirm the file saved, and only then asks for the join code. A failed backup aborts the delete.
+
+That needed `exportXlsx` to stop reading module state directly. It now takes a bundle and falls back to the board on screen (`boardBundle()`), so `SB.loadWorkshopData(id)` can produce the same six-tab workbook for a workshop that is not open. `exportCsv` took the same treatment.
+
 ## Dead ends, so the next session does not repeat them
 
 - "AI off" in the sidebar with the key present on Vercel was a stale tab or a preview domain, not a code problem. Check the URL and hard reload before touching anything.

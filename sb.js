@@ -16,7 +16,7 @@
              resetVotes, insertSystem, updateSystem, deleteSystem, updateWorkshop, clearPrepared,
              addTranscript, setAIIdeas, api(mode, prompt)
      admin:  listOrgs, createOrg, listWorkshops, workshopStats, createWorkshop,
-             deleteWorkshop, members,
+             duplicateWorkshop, loadWorkshopData, deleteWorkshop, members,
              bridgeToken, sendLink, joinAnonymously, isAnon, signOut
    ========================================================================== */
 window.SB = (function () {
@@ -123,12 +123,13 @@ window.SB = (function () {
     myDots = {}; (r[4].data || []).forEach(function (v) { myDots[v.opportunity_id] = v.dots; });
     emit('data', { workshop: ws, systems: r[1].data || [], phases: r[7].data || [], opportunities: (r[2].data || []).map(mapOp), second: r[5].data || [], transcript: r[6].data || [], full: true });
   }
-  function mapOp(row) {
-    var t = tallies[row.id] || {};
+  function mapOp(row) { return mapOpWith(row, tallies, myDots); }
+  function mapOpWith(row, tallyMap, mine) {
+    var t = (tallyMap || {})[row.id] || {};
     return { id: 'O' + row.seq, uid: row.id, seq: row.seq, title: row.title, fn: row.fn, phase: row.phase || '', cluster: row.cluster || '',
       surface: row.surface || '', build: row.build || '', pain: row.pain || '', direction: row.direction || '', systems: row.systems || [],
       quote: row.quote || '', raisedBy: row.raised_by || '', owner: row.owner || '', status: row.status, source: row.source, confidence: row.confidence || 'Medium',
-      notes: row.notes || '', value: row.value, ease: row.ease, votes: t.total || 0, voters: t.names || [], myDots: myDots[row.id] || 0,
+      notes: row.notes || '', value: row.value, ease: row.ease, votes: t.total || 0, voters: t.names || [], myDots: (mine || {})[row.id] || 0,
       createdAt: Date.parse(row.created_at) || 0, createdBy: row.created_by };
   }
   var refreshers = {
@@ -266,6 +267,66 @@ window.SB = (function () {
     return out;
   }
 
+  /* Everything in one workshop, in the shapes the board and the Excel export
+     already use, without opening it. Behind "save a backup before you delete
+     this" and nothing else. */
+  async function loadWorkshopData(id) {
+    var r = await Promise.all([
+      client.from('workshops').select('*').eq('id', id).maybeSingle(),
+      client.from('systems').select('*').eq('workshop_id', id).order('sort'),
+      client.from('phases').select('*').eq('workshop_id', id).order('sort'),
+      client.from('opportunities').select('*').eq('workshop_id', id).order('seq'),
+      client.from('vote_tallies').select('*').eq('workshop_id', id),
+      client.from('second_ideas').select('*').eq('workshop_id', id).order('sort')
+    ]);
+    if (!r[0].data) { emit('toast', 'Could not read that workshop'); return null; }
+    var t = {}; (r[4].data || []).forEach(function (x) { t[x.opportunity_id] = x; });
+    var idea = function (row, n) { return { id: row.key || ('A' + (n + 1)), title: row.title, fn: row.fn, phase: row.phase, surface: row.surface, build: row.build, what: row.what, why: row.why, lift: row.lift, comparator: row.comparator, confidence: row.confidence, fromAI: row.origin === 'ai' }; };
+    var second = r[5].data || [];
+    return {
+      workshop: r[0].data,
+      config: r[0].data.config || {},
+      systems: (r[1].data || []).map(function (x) { return { id: x.id, uid: x.id, name: x.name, category: x.category || '', usedBy: x.used_by || '', connector: x.connector || '', status: x.status, note: x.note || '' }; }),
+      phases: (r[2].data || []).map(function (x) { return { id: x.id, uid: x.id, fn: x.fn, name: x.name, what: x.what || '', prompts: x.prompts || [] }; }),
+      opportunities: (r[3].data || []).map(function (row) { return mapOpWith(row, t, {}); }),
+      blindSpots: second.filter(function (x) { return x.origin === 'consultant'; }).map(idea),
+      secondAI: second.filter(function (x) { return x.origin === 'ai'; }).map(idea)
+    };
+  }
+
+  /* Duplicate a workshop as a template for the next client: the settings, the
+     systems, the process phases and the prepared second viewpoint ideas come
+     across. The last session's own work does not, so no opportunities, votes,
+     transcript, prompt packs or ideas Claude wrote from that transcript.
+     The systems and blindSpots keys are cleared from the copied config first,
+     because the insert trigger seeds rows from them and would double up. */
+  async function duplicateWorkshop(sourceId, fields) {
+    var src = await client.from('workshops').select('*').eq('id', sourceId).maybeSingle();
+    if (!src.data) { emit('toast', 'Could not read that workshop'); return null; }
+    var cfg = Object.assign({}, src.data.config || {});
+    delete cfg.promptPacks; delete cfg.phases;
+    cfg.systems = []; cfg.blindSpots = [];
+    var ins = await client.from('workshops').insert({
+      org_id: src.data.org_id, slug: fields.slug, title: fields.title, join_code: fields.joinCode,
+      max_dots: src.data.max_dots, config: cfg, created_by: user.id, status: 'live'
+    }).select().single();
+    if (ins.error) fail(ins.error, 'Could not duplicate');
+    var nid = ins.data.id, who = myName();
+    var from = await Promise.all([
+      client.from('systems').select('*').eq('workshop_id', sourceId).order('sort'),
+      client.from('phases').select('*').eq('workshop_id', sourceId).order('sort'),
+      client.from('second_ideas').select('*').eq('workshop_id', sourceId).eq('origin', 'consultant').order('sort')
+    ]);
+    var copied = { systems: 0, phases: 0, ideas: 0 };
+    var sys = (from[0].data || []).map(function (x) { return { workshop_id: nid, name: x.name, category: x.category, used_by: x.used_by, connector: x.connector, status: x.status, note: x.note, sort: x.sort, source: 'Facilitator', added_by: who }; });
+    if (sys.length) { var a = await client.from('systems').insert(sys); if (!a.error) copied.systems = sys.length; }
+    var ph = (from[1].data || []).map(function (x) { return { workshop_id: nid, fn: x.fn, name: x.name, what: x.what, prompts: x.prompts || [], sort: x.sort, source: 'Facilitator', added_by: who }; });
+    if (ph.length) { var b = await client.from('phases').insert(ph); if (!b.error) copied.phases = ph.length; }
+    var si = (from[2].data || []).map(function (x) { return { workshop_id: nid, key: x.key, title: x.title, fn: x.fn, phase: x.phase, surface: x.surface, build: x.build, what: x.what, why: x.why, lift: x.lift, comparator: x.comparator, confidence: x.confidence, origin: 'consultant', sort: x.sort }; });
+    if (si.length) { var c = await client.from('second_ideas').insert(si); if (!c.error) copied.ideas = si.length; }
+    return { workshop: ins.data, copied: copied };
+  }
+
   /* Delete a workshop and everything in it. Every child table references
      workshops(id) on delete cascade, so one delete takes the opportunities,
      votes, systems, phases, second viewpoint ideas, transcript and bridge
@@ -293,6 +354,6 @@ window.SB = (function () {
     resetVotes: resetVotes,
     insertSystem: insertSystem, updateSystem: updateSystem, deleteSystem: deleteSystem, updateWorkshop: updateWorkshop, clearPrepared: clearPrepared,
     addTranscript: addTranscript, setAIIdeas: setAIIdeas, api: api,
-    listOrgs: listOrgs, createOrg: createOrg, listWorkshops: listWorkshops, workshopStats: workshopStats, createWorkshop: createWorkshop, deleteWorkshop: deleteWorkshop, members: members, bridgeToken: bridgeToken, myVotesUsed: myVotesUsed
+    listOrgs: listOrgs, createOrg: createOrg, listWorkshops: listWorkshops, workshopStats: workshopStats, createWorkshop: createWorkshop, duplicateWorkshop: duplicateWorkshop, loadWorkshopData: loadWorkshopData, deleteWorkshop: deleteWorkshop, members: members, bridgeToken: bridgeToken, myVotesUsed: myVotesUsed
   };
 })();
