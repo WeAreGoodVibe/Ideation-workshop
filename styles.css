@@ -276,6 +276,9 @@ table.reg select, table.reg input { padding: 4px 6px; font-size: 0.82rem; }
 .empty { padding: var(--sc-8) var(--sc-4); text-align: center; color: var(--sc-ink-soft); border: 1px dashed var(--line-strong); border-radius: var(--sc-r-lg); }
 .empty b { color: var(--sc-ink); }
 
+tr.ws--open td { background: color-mix(in oklab, var(--sc-accent) 8%, transparent); }
+.wsacts { display: flex; gap: 6px; align-items: center; flex-wrap: nowrap; justify-content: flex-end; }
+
 /* ------------------------------------------------------- voting controls -- */
 .votebar {
   display: flex; align-items: center; gap: var(--sc-3); flex-wrap: wrap;

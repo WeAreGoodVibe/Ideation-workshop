@@ -15,7 +15,8 @@
              insertPhase, updatePhase, deletePhase, setName,
              resetVotes, insertSystem, updateSystem, deleteSystem, updateWorkshop, clearPrepared,
              addTranscript, setAIIdeas, api(mode, prompt)
-     admin:  listOrgs, createOrg, listWorkshops, createWorkshop, members,
+     admin:  listOrgs, createOrg, listWorkshops, workshopStats, createWorkshop,
+             deleteWorkshop, members,
              bridgeToken, sendLink, joinAnonymously, isAnon, signOut
    ========================================================================== */
 window.SB = (function () {
@@ -245,7 +246,36 @@ window.SB = (function () {
     if (q.error || !q.data) fail(q.error || new Error('created but not readable'), 'Could not read the organisation back');
     return q.data;
   }
-  async function listWorkshops() { var r = await client.from('workshops').select('id,org_id,slug,title,join_code,status,created_at').order('created_at', { ascending: false }); return r.data || []; }
+  async function listWorkshops() { var r = await client.from('workshops').select('id,org_id,slug,title,join_code,status,max_dots,created_at,updated_at').order('updated_at', { ascending: false }); return r.data || []; }
+
+  /* What is inside each workshop, so the Workshops list can say "16 ideas,
+     25 votes" instead of leaving you to open each one to find out. One read
+     per table, workshop_id only; row level security already limits these to
+     workshops you belong to. */
+  async function workshopStats() {
+    var tables = [['opportunities', 'opps'], ['votes', 'votes'], ['systems', 'systems'], ['phases', 'phases'], ['second_ideas', 'ideas'], ['transcript_chunks', 'transcript']];
+    var out = {};
+    var rs = await Promise.all(tables.map(function (t) { return client.from(t[0]).select('workshop_id'); }));
+    rs.forEach(function (r, i) {
+      var key = tables[i][1];
+      (r.data || []).forEach(function (row) {
+        if (!out[row.workshop_id]) out[row.workshop_id] = { opps: 0, votes: 0, systems: 0, phases: 0, ideas: 0, transcript: 0 };
+        out[row.workshop_id][key]++;
+      });
+    });
+    return out;
+  }
+
+  /* Delete a workshop and everything in it. Every child table references
+     workshops(id) on delete cascade, so one delete takes the opportunities,
+     votes, systems, phases, second viewpoint ideas, transcript and bridge
+     token with it. Row level security already limits this to a facilitator
+     of that workshop's organisation; there is no undo. */
+  async function deleteWorkshop(id) {
+    var r = await client.from('workshops').delete().eq('id', id);
+    if (r.error) { emit('toast', 'Could not delete: ' + (r.error.message || '')); return false; }
+    return true;
+  }
   async function createWorkshop(orgId, fields, config) {
     var r = await client.from('workshops').insert({ org_id: orgId, slug: fields.slug, title: fields.title, join_code: fields.joinCode, max_dots: fields.maxDots || 3, config: config, created_by: user.id, status: 'live' }).select().single();
     if (r.error) fail(r.error, 'Could not create the workshop'); return r.data;
@@ -263,6 +293,6 @@ window.SB = (function () {
     resetVotes: resetVotes,
     insertSystem: insertSystem, updateSystem: updateSystem, deleteSystem: deleteSystem, updateWorkshop: updateWorkshop, clearPrepared: clearPrepared,
     addTranscript: addTranscript, setAIIdeas: setAIIdeas, api: api,
-    listOrgs: listOrgs, createOrg: createOrg, listWorkshops: listWorkshops, createWorkshop: createWorkshop, members: members, bridgeToken: bridgeToken, myVotesUsed: myVotesUsed
+    listOrgs: listOrgs, createOrg: createOrg, listWorkshops: listWorkshops, workshopStats: workshopStats, createWorkshop: createWorkshop, deleteWorkshop: deleteWorkshop, members: members, bridgeToken: bridgeToken, myVotesUsed: myVotesUsed
   };
 })();

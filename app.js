@@ -1270,6 +1270,7 @@
       case 'emaillogin': authScreen('login', SB.param('w'), 'email'); break;
       case 'signout': SB.signOut(); break;
       case 'openws': location.href = location.pathname + '?w=' + encodeURIComponent(b.dataset.slug); break;
+      case 'delws': deleteWorkshop(b.dataset.id); break;
       case 'createws': adminCreateWorkshop(); break;
       case 'showtoken': SB.bridgeToken().then(function (t) { var el = $('#bridgeToken'); if (el) el.textContent = t; }); break;
       case 'copytoken': SB.bridgeToken().then(copyText); break;
@@ -1452,12 +1453,76 @@
       '<div class="row"><button class="btn btn--primary" data-action="createws">Create workshop</button></div></div></details></div>';
     return h;
   }
+  /* Rows behind the Workshops list, so Delete can say what it is about to
+     destroy without going back to the database for it. */
+  var WS_ROWS = {};
+  function wsContents(st) {
+    if (!st) return '<span class="muted">empty</span>';
+    var bits = [];
+    if (st.opps) bits.push(st.opps + ' idea' + (st.opps === 1 ? '' : 's'));
+    if (st.votes) bits.push(st.votes + ' vote' + (st.votes === 1 ? '' : 's'));
+    if (st.systems) bits.push(st.systems + ' system' + (st.systems === 1 ? '' : 's'));
+    if (st.phases) bits.push(st.phases + ' phase' + (st.phases === 1 ? '' : 's'));
+    if (st.transcript) bits.push('transcript');
+    return bits.length ? esc(bits.join(' · ')) : '<span class="muted">empty</span>';
+  }
+  function whenUsed(iso) {
+    var t = Date.parse(iso); if (!t) return '';
+    var days = Math.floor((now() - t) / 86400000);
+    if (days <= 0) return 'today';
+    if (days === 1) return 'yesterday';
+    if (days < 7) return days + ' days ago';
+    return new Date(t).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', timeZone: 'Australia/Melbourne' });
+  }
+
+  /* Deleting a workshop takes the client's whole session with it, so the
+     confirmation is proportionate to what is inside: an empty one goes on a
+     single yes, one with real work in it makes you type its join code. */
+  function deleteWorkshop(id) {
+    var row = WS_ROWS[id]; if (!row) return;
+    var w = row.w, st = row.stats;
+    var real = st && (st.opps || st.transcript || st.votes);
+    var what = st ? wsContents(st).replace(/<[^>]+>/g, '') : 'nothing';
+    if (!real) {
+      if (!confirm('Delete "' + w.title + '"?\n\nIt holds ' + what + '. This cannot be undone.')) return;
+    } else {
+      if (!confirm('Delete "' + w.title + '"?\n\nThis permanently destroys ' + what + '. Export it first if you want to keep it.\n\nThere is no undo and no backup.')) return;
+      var typed = prompt('To confirm, type this workshop\'s join code: ' + w.join_code);
+      if (typed === null) return;
+      if (String(typed).trim() !== String(w.join_code).trim()) { toast('That did not match. Nothing was deleted.'); return; }
+    }
+    var wasOpen = SB.ws && SB.ws.id === id;
+    SB.deleteWorkshop(id).then(function (ok) {
+      if (!ok) return;
+      toast('Deleted "' + w.title + '"');
+      if (wasOpen) { location.href = location.pathname; return; }
+      fillAdmin();
+    });
+  }
+
   function fillAdmin() {
     if (!(window.SB && SB.user)) return;
-    Promise.all([SB.listOrgs(), SB.listWorkshops()]).then(function (r) {
-      var orgs = r[0], wss = r[1], sel = $('#n_org'), list = $('#wsList');
+    Promise.all([SB.listOrgs(), SB.listWorkshops(), SB.workshopStats().catch(function () { return {}; })]).then(function (r) {
+      var orgs = r[0], wss = r[1], stats = r[2] || {}, sel = $('#n_org'), list = $('#wsList');
+      WS_ROWS = {}; wss.forEach(function (w) { WS_ROWS[w.id] = { w: w, stats: stats[w.id] || null }; });
       if (sel) sel.innerHTML = '<option value="">New organisation…</option>' + orgs.map(function (o) { return '<option value="' + esc(o.id) + '">' + esc(o.name) + '</option>'; }).join('');
-      if (list) list.innerHTML = wss.length ? '<table class="reg" style="min-width:0"><thead><tr><th>Workshop</th><th>Organisation</th><th>Code</th><th>Join link</th><th></th></tr></thead><tbody>' + wss.map(function (w) { var o = orgs.filter(function (x) { return x.id === w.org_id; })[0]; return '<tr><td>' + esc(w.title) + '</td><td>' + esc(o ? o.name : '') + '</td><td>' + esc(w.join_code) + '</td><td><code class="small">' + esc(joinLinkFor(w.slug, w.join_code)) + '</code> <button class="btn btn--sm btn--ghost" data-action="copylinkfor" data-slug="' + esc(w.slug) + '" data-code="' + esc(w.join_code) + '">Copy</button></td><td><button class="btn btn--sm" data-action="openws" data-slug="' + esc(w.slug) + '">Open</button></td></tr>'; }).join('') + '</tbody></table>' : 'No workshops yet. Create one below.';
+      if (!list) return;
+      if (!wss.length) { list.innerHTML = 'No workshops yet. Create one below.'; return; }
+      var open = SB.ws ? SB.ws.id : null;
+      list.innerHTML = '<table class="reg" style="min-width:0"><thead><tr><th>Workshop</th><th>Organisation</th><th>Code</th><th>What is in it</th><th>Last used</th><th></th></tr></thead><tbody>' +
+        wss.map(function (w) {
+          var o = orgs.filter(function (x) { return x.id === w.org_id; })[0];
+          return '<tr' + (w.id === open ? ' class="ws--open"' : '') + '><td>' + esc(w.title) + (w.id === open ? ' <span class="chip">open now</span>' : '') + '</td>' +
+            '<td>' + esc(o ? o.name : '') + '</td><td>' + esc(w.join_code) + '</td>' +
+            '<td class="small">' + wsContents(stats[w.id]) + '</td>' +
+            '<td class="small muted">' + esc(whenUsed(w.updated_at)) + '</td>' +
+            '<td><div class="wsacts">' +
+              '<button class="btn btn--sm btn--ghost" data-action="copylinkfor" data-slug="' + esc(w.slug) + '" data-code="' + esc(w.join_code) + '">Link</button>' +
+              '<button class="btn btn--sm" data-action="openws" data-slug="' + esc(w.slug) + '">Open</button>' +
+              '<button class="btn btn--sm btn--ghost btn--danger" data-action="delws" data-id="' + esc(w.id) + '">Delete</button>' +
+            '</div></td></tr>';
+        }).join('') + '</tbody></table>' +
+        '<p class="small muted">Opening a workshop picks it up exactly where it was left: every idea, vote, system, phase and the transcript. Nothing expires. Delete is permanent.</p>';
     }).catch(function (e) { log('admin: ' + (e.message || e)); });
     if (SB.ws && SB.role === 'facilitator') SB.members().then(function (ms) {
       var el = $('#membersList'); if (!el) return;

@@ -97,6 +97,18 @@ The packs live in `workshops.config.promptPacks`, keyed by opportunity id, so no
 
 Two requests at a time keeps each reply inside the token ceiling and the function timeout; `vercel.json` now sets `maxDuration` 60 on `api/*.js` so a slow generation is not cut off.
 
+## Changed on 21 September (delete a workshop, workshops list shows its contents)
+
+Same branch as the 20 September work, still not merged.
+
+**Delete a workshop.** Settings → Workshops now has a Delete button per row. No migration was needed: the `workshops_write` policy is `for all`, so a facilitator could already delete, and every child table references `workshops(id) on delete cascade`, so one delete takes the opportunities, votes, systems, phases, second viewpoint ideas, transcript and bridge token with it.
+
+The confirmation is proportionate. An empty workshop goes on one confirm. One holding ideas, votes or a transcript names what it is about to destroy and then makes you type that workshop's join code. Deleting the workshop you have open sends you back to the workshop picker.
+
+**The Workshops list now earns its place.** It shows what is inside each workshop (ideas, votes, systems, phases, transcript), when it was last used, and marks the one you have open. Sorted by last used rather than created. The counts come from `SB.workshopStats()`, one read per table selecting `workshop_id` only; row level security already limits those to workshops you belong to. Without this, telling a real client session from a test meant opening each one.
+
+**Reopening a workshop was already permanent and unconditional**, and is now stated in the UI. Nothing archives, expires or locks: `listWorkshops` does not filter, `openWorkshop` does not check status, and the `workshops.status` column is written once at creation and never read. A workshop is a living document; pause and come back weeks later.
+
 ## Dead ends, so the next session does not repeat them
 
 - "AI off" in the sidebar with the key present on Vercel was a stale tab or a preview domain, not a code problem. Check the URL and hard reload before touching anything.
