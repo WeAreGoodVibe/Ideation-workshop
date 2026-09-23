@@ -302,7 +302,7 @@
     var key = S.settings.apiKey;
     if (!key) return Promise.reject({ code: 'no_key', message: 'No API key' });
     var body = {
-      model: S.settings.model || 'claude-opus-5', max_tokens: pack ? 16000 : 6000,
+      model: S.settings.model || 'claude-opus-5', max_tokens: (pack || complex) ? 32000 : 16000,
       output_config: { effort: complex ? 'high' : 'low', format: { type: 'json_schema', schema: complex ? undefined : schema() } },
       messages: [{ role: 'user', content: prompt }]
     };
@@ -454,10 +454,21 @@
     var t = fullTranscript(); if (t.length > 52000) t = t.slice(-52000);
     if (t.length < 400) { toast('Not enough transcript for an AI pass; consultant list only'); return Promise.resolve(); }
     setAiStatus('busy', 'AI writing the second viewpoint…');
-    var written = 0;
-    return askJSON(secondPrompt(t, S.opportunities.map(function (o) { return o.title; })), 'complex', function (key) {
-      if (key === 'ideas') setAiStatus('busy', 'AI writing the second viewpoint… ' + (++written) + ' idea' + (written === 1 ? '' : 's') + ' so far');
+    /* Ideas are kept as they stream, so a reply that is cut off part way
+       still gives the room every idea that was finished. */
+    var streamed = [];
+    return askJSON(secondPrompt(t, S.opportunities.map(function (o) { return o.title; })), 'complex', function (key, idea) {
+      if (key !== 'ideas') return;
+      streamed.push(idea);
+      setAiStatus('busy', 'AI writing the second viewpoint… ' + streamed.length + ' idea' + (streamed.length === 1 ? '' : 's') + ' so far');
     })
+      .catch(function (e) {
+        if (e && (e.code === 'max_tokens' || e.code === 'invalid_json') && streamed.length) {
+          log('Second viewpoint was cut off; keeping the ' + streamed.length + ' finished ideas');
+          return { ideas: streamed };
+        }
+        throw e;
+      })
       .then(function (j) {
         var ideas = (j && j.ideas) || [];
         S.secondAI = ideas.map(function (i, n) { return Object.assign({ id: 'A' + (n + 1), fn: i.function || 'Both' }, i); });

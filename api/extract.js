@@ -68,10 +68,13 @@ module.exports = async (req, res) => {
     if (!body.workshopId || !body.prompt) return json(res, 400, { error: 'workshopId and prompt are required' });
     if (!(await isFacilitator(tokenFromRequest(req), body.workshopId))) return json(res, 403, { error: 'Facilitators only' });
     if (String(body.prompt).length > 200000) return json(res, 413, { error: 'Prompt too long' });
+    /* The ceilings are generous because the model thinks before it writes and
+       that thinking counts against them: at high effort over a long transcript
+       it can use most of the old 6000 on its own, which cut the reply off. */
     let opts;
-    if (body.mode === 'second') opts = { effort: 'high' };
-    else if (body.mode === 'prompts') opts = { effort: 'low', maxTokens: 16000, schema: promptsSchema };
-    else opts = { effort: 'low', schema: extractSchema(functionsFrom(body)) };
+    if (body.mode === 'second') opts = { effort: 'high', maxTokens: 32000 };
+    else if (body.mode === 'prompts') opts = { effort: 'low', maxTokens: 32000, schema: promptsSchema };
+    else opts = { effort: 'low', maxTokens: 16000, schema: extractSchema(functionsFrom(body)) };
     if (!body.stream) return json(res, 200, await askClaude(body.prompt, opts));
     /* Streamed: one JSON object per line. {"t":…} is the next piece of the
        reply, then {"done":true,"stop":…} or {"error":…}. The page builds the
@@ -87,11 +90,16 @@ module.exports = async (req, res) => {
     open();
     try {
       const stop = await out.done;
+      /* One line per call so a failure can be read from the Vercel logs, not
+         only from the facilitator's screen. */
+      console.log(JSON.stringify({ mode: body.mode || 'extract', stop, promptChars: String(body.prompt).length }));
       res.end(JSON.stringify(stop === 'refusal' ? { error: 'The model declined this window.' } : { done: true, stop }) + '\n');
     } catch (e) {
+      console.error('extract stream failed', body.mode || 'extract', String(e.message || e));
       res.end(JSON.stringify({ error: String(e.message || e) }) + '\n');
     }
   } catch (e) {
+    console.error('extract failed', String(e.message || e));
     if (res.headersSent) return res.end(JSON.stringify({ error: String(e.message || e) }) + '\n');
     return json(res, 500, { error: String(e.message || e) });
   }
