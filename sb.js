@@ -231,8 +231,13 @@ window.SB = (function () {
   }
   async function api(mode, prompt, extra) {
     var r = await fetch('/api/extract', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + session.access_token }, body: JSON.stringify(Object.assign({ workshopId: ws.id, prompt: prompt, mode: mode }, extra || {})) });
-    var j = await r.json();
-    if (!r.ok) throw { code: 'http_' + r.status, message: j.error || r.statusText };
+    /* A timed-out or crashed function returns Vercel's plain-text error page,
+       not JSON, so read text first and say what happened. */
+    var text = await r.text(), j = null;
+    try { j = text ? JSON.parse(text) : null; } catch (e) {}
+    if (r.status === 504) throw { code: 'http_504', message: 'The AI took too long and the server timed out. It will try again.' };
+    if (!r.ok) throw { code: 'http_' + r.status, message: (j && j.error) || r.statusText || text.slice(0, 140) };
+    if (!j) throw { code: 'invalid_json', message: 'The server reply was not JSON' };
     return j;
   }
 
