@@ -129,6 +129,15 @@
     dot.className = 'dot' + (state === 'busy' ? ' dot--busy' : state === 'live' ? ' dot--live' : state === 'bad' ? ' dot--bad' : '');
     $('#aiStatus').textContent = text || ({ busy: 'AI reading…', live: 'AI listening', idle: 'AI ready', off: (SBA() ? 'AI off: server key missing, see Settings' : 'AI off: add a key or publish as an Artifact'), bad: 'AI error, see Live' })[state];
   }
+  /* The end of an AI job, said plainly: while ideas stream in the room can't
+     tell whether more are coming, so the status line keeps saying "done" and
+     when, and a toast says so if the job put anything on the board. */
+  function aiDone(what, bits, quiet) {
+    var at = new Date().toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', timeZone: 'Australia/Melbourne' }).replace(/\s?(am|pm)/i, function (m) { return m.trim().toLowerCase(); });
+    var got = bits.length ? bits.join(', ') : 'nothing new';
+    setAiStatus(RUN.source !== 'none' ? 'live' : 'idle', what + ' done ' + at + ': ' + got);
+    if (!quiet || bits.length) toast(what + ' done: ' + got + '. That is everything from this pass.');
+  }
   function setSrcStatus(state, text) {
     var dot = $('#srcDot');
     dot.className = 'dot' + (state === 'live' ? ' dot--live' : state === 'bad' ? ' dot--bad' : '');
@@ -276,12 +285,20 @@
     ].join('\n\n');
   }
 
-  function askJSON(prompt, tier) {
+  /* onItem, when given, is called with each finished item as the reply
+     streams in (see jsonItems). The promise still resolves with the whole
+     parsed reply, so a caller can tell what it has already placed. */
+  function askJSON(prompt, tier, onItem) {
     var complex = tier === 'complex', pack = tier === 'prompts';
+    var feed = onItem ? jsonItems(onItem) : null;
     if (CAP.sample) {
       return CAP.sample.json(prompt, { modelTier: complex ? 'complex' : 'quick', cache: false });
     }
-    if (serverAI()) return SB.api(complex ? 'second' : pack ? 'prompts' : 'extract', prompt, { functions: CFG.functionsTags });
+    if (serverAI()) {
+      var mode = complex ? 'second' : pack ? 'prompts' : 'extract';
+      if (!feed) return SB.api(mode, prompt, { functions: CFG.functionsTags });
+      return SB.api(mode, prompt, { functions: CFG.functionsTags }, feed).then(function (r) { return typeof r === 'string' ? parseLooseJSON(r) : r; });
+    }
     var key = S.settings.apiKey;
     if (!key) return Promise.reject({ code: 'no_key', message: 'No API key' });
     var body = {
@@ -290,11 +307,13 @@
       messages: [{ role: 'user', content: prompt }]
     };
     if (complex || pack) delete body.output_config.format;
+    if (feed) body.stream = true;
     return fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
       body: JSON.stringify(body)
     }).then(function (r) {
+      if (feed && r.ok && r.body) return readClaudeStream(r, feed).then(parseLooseJSON);
       return r.json().then(function (j) { if (!r.ok) throw { code: 'http_' + r.status, message: (j.error && j.error.message) || r.statusText }; return j; });
     }).then(function (j) {
       if (j.stop_reason === 'refusal') throw { code: 'refused', message: 'The model declined this window.' };
@@ -302,12 +321,69 @@
       return parseLooseJSON(text);
     });
   }
+  /* Claude's own event stream, read straight from the browser: feed gets
+     each piece of text, and the promise resolves with the whole reply. */
+  function readClaudeStream(r, feed) {
+    var reader = r.body.getReader(), decoder = new TextDecoder(), buf = '', whole = '', stop = null;
+    function block(b) {
+      var data = b.split('\n').filter(function (l) { return l.indexOf('data:') === 0; }).map(function (l) { return l.slice(5).trim(); }).join('');
+      if (!data) return;
+      var ev; try { ev = JSON.parse(data); } catch (e) { return; }
+      if (ev.type === 'content_block_delta' && ev.delta && ev.delta.type === 'text_delta') { whole += ev.delta.text; feed(ev.delta.text); }
+      else if (ev.type === 'message_delta' && ev.delta && ev.delta.stop_reason) stop = ev.delta.stop_reason;
+      else if (ev.type === 'error') throw { code: 'stream', message: (ev.error && ev.error.message) || 'Stream error' };
+    }
+    function pump() {
+      return reader.read().then(function (step) {
+        if (!step.done) buf += decoder.decode(step.value, { stream: true });
+        var i; while ((i = buf.indexOf('\n\n')) >= 0) { block(buf.slice(0, i)); buf = buf.slice(i + 2); }
+        if (!step.done) return pump();
+        if (buf.trim()) block(buf);
+        if (stop === 'refusal') throw { code: 'refused', message: 'The model declined this window.' };
+        if (stop === 'max_tokens') throw { code: 'max_tokens', message: 'The reply ran out of room before it finished.', text: whole };
+        return whole;
+      });
+    }
+    return pump();
+  }
   function parseLooseJSON(text) {
     try { return JSON.parse(text); } catch (e) {}
     var m = text.match(/```(?:json)?\s*([\s\S]*?)```/); if (m) { try { return JSON.parse(m[1]); } catch (e) {} }
     var a = text.indexOf('{'), b = text.lastIndexOf('}');
     if (a >= 0 && b > a) { try { return JSON.parse(text.slice(a, b + 1)); } catch (e) {} }
     throw { code: 'invalid_json', message: 'No JSON in reply', text: text };
+  }
+
+  /* Reads a JSON reply while it is still being written and calls
+     onItem(key, item) the moment each object inside a top-level array is
+     whole, for example ("opportunities", {...}). That is what lets an idea
+     land on the board before the rest of the reply has arrived. The finished
+     reply is still parsed in full at the end; this only gets there sooner. */
+  function jsonItems(onItem) {
+    var buf = '', pos = 0, depth = 0, inStr = false, esc = false, lastStr = '', strStart = -1, key = '', start = -1;
+    return function (text) {
+      buf += text;
+      for (; pos < buf.length; pos++) {
+        var c = buf[pos];
+        if (inStr) {
+          if (esc) esc = false;
+          else if (c === '\\') esc = true;
+          else if (c === '"') { inStr = false; if (depth === 1) lastStr = buf.slice(strStart + 1, pos); }
+          continue;
+        }
+        if (c === '"') { inStr = true; strStart = pos; }
+        else if (c === ':' && depth === 1) key = lastStr;
+        else if (c === '{' || c === '[') { depth++; if (c === '{' && depth === 3) start = pos; }
+        else if (c === '}' || c === ']') {
+          if (c === '}' && depth === 3 && start >= 0) {
+            var item = null; try { item = JSON.parse(buf.slice(start, pos + 1)); } catch (e) {}
+            start = -1;
+            if (item) { try { onItem(key, item); } catch (e) { log('Could not place a streamed item: ' + (e && e.message)); } }
+          }
+          depth = Math.max(0, depth - 1);
+        }
+      }
+    };
   }
 
   function scheduleExtract() {
@@ -332,13 +408,24 @@
     var consumedTo = Math.min(all.length, S.consumedChars + 14000);
     RUN.extracting = true; setAiStatus('busy'); updateTiles();
     log('Reading ' + (consumedTo - S.consumedChars) + ' new characters');
-    return askJSON(extractPrompt(windowText, S.opportunities.map(function (o) { return o.title; })), 'quick')
+    /* Each item is placed the moment the stream finishes writing it, so the
+       room sees ideas arrive one by one. `seen` counts what was placed per
+       list, and the full reply at the end only places what is left over. */
+    var seen = { opportunities: 0, systems: 0, phases: 0 }, added = 0, systemsAdded = 0, phasesAdded = 0;
+    function place(key, item) {
+      if (key === 'opportunities') { if (addOpportunity(item, 'AI')) { added++; toast('+1 idea: ' + String(item.title || '').slice(0, 80)); } }
+      else if (key === 'systems') systemsAdded += addHeardSystems([item]);
+      else if (key === 'phases') { if (phasesAdded < 2) phasesAdded += addHeardPhases([item]); }
+      else return;
+      seen[key]++;
+      setAiStatus('busy', 'AI reading… ' + added + ' idea' + (added === 1 ? '' : 's') + ' so far');
+    }
+    return askJSON(extractPrompt(windowText, S.opportunities.map(function (o) { return o.title; })), 'quick', place)
       .then(function (j) {
         var list = (j && j.opportunities) || [];
-        var phasesAdded = addHeardPhases(j && j.phases);
-        var systemsAdded = addHeardSystems(j && j.systems);
-        var added = 0;
-        list.forEach(function (o) { if (addOpportunity(o, 'AI')) added++; });
+        ['opportunities', 'systems', 'phases'].forEach(function (k) {
+          ((j && j[k]) || []).slice(seen[k]).forEach(function (item) { place(k, item); });
+        });
         S.consumedChars = consumedTo;
         save();
         if (SBA()) SB.updateWorkshop({ consumed_chars: consumedTo }).catch(function () {});
@@ -347,10 +434,9 @@
         if (added) bits.push('+' + added + ' idea' + (added > 1 ? 's' : ''));
         if (systemsAdded) bits.push('+' + systemsAdded + ' system' + (systemsAdded > 1 ? 's' : ''));
         if (phasesAdded) bits.push('+' + phasesAdded + ' phase' + (phasesAdded > 1 ? 's' : ''));
-        if (bits.length) toast(bits.join(', ') + ' on the board');
         if ((systemsAdded || phasesAdded) && !SBA()) render();
         RUN.failures = 0;
-        setAiStatus(RUN.source !== 'none' ? 'live' : 'idle');
+        aiDone('AI read', bits, !force);
       })
       .catch(function (e) {
         RUN.failures++;
@@ -368,15 +454,22 @@
     var t = fullTranscript(); if (t.length > 52000) t = t.slice(-52000);
     if (t.length < 400) { toast('Not enough transcript for an AI pass; consultant list only'); return Promise.resolve(); }
     setAiStatus('busy', 'AI writing the second viewpoint…');
-    return askJSON(secondPrompt(t, S.opportunities.map(function (o) { return o.title; })), 'complex')
+    var written = 0;
+    return askJSON(secondPrompt(t, S.opportunities.map(function (o) { return o.title; })), 'complex', function (key) {
+      if (key === 'ideas') setAiStatus('busy', 'AI writing the second viewpoint… ' + (++written) + ' idea' + (written === 1 ? '' : 's') + ' so far');
+    })
       .then(function (j) {
         var ideas = (j && j.ideas) || [];
         S.secondAI = ideas.map(function (i, n) { return Object.assign({ id: 'A' + (n + 1), fn: i.function || 'Both' }, i); });
         save(); log('Second viewpoint: ' + ideas.length + ' AI ideas');
         if (SBA()) SB.setAIIdeas(S.secondAI).catch(function () {});
-        setAiStatus('idle');
+        aiDone('Second viewpoint', [ideas.length + ' idea' + (ideas.length === 1 ? '' : 's')]);
       })
-      .catch(function (e) { log('Second viewpoint error: ' + (e && (e.code + ' ' + e.message))); setAiStatus('bad'); });
+      .catch(function (e) {
+        log('Second viewpoint error: ' + (e && (e.code + ' ' + e.message)));
+        setAiStatus('bad', 'Second viewpoint failed, see Live');
+        toast('Second viewpoint failed: ' + String((e && e.message) || e).slice(0, 140));
+      });
   }
 
   /* ------------------------------------------------- prompts and skills -- */
@@ -455,18 +548,24 @@
     function runOne() {
       if (next >= chunks.length) return Promise.resolve();
       var chunk = chunks[next++];
-      return askJSON(promptsPrompt(chunk), 'prompts').then(function (j) {
-        var got = (j && j.packs) || [];
-        got.forEach(function (pk) {
-          var o = findOp(pk.id) || chunk.filter(function (x) { return norm(x.title) === norm(pk.title); })[0];
-          if (!o) return;
-          map[o.id] = { id: o.id, title: o.title, kind: pk.kind || o.build, artefactName: pk.artefactName || '',
-            interview: pk.interview || '', artefact: pk.artefact || '', firstRun: pk.firstRun || '',
-            connectors: Array.isArray(pk.connectors) ? pk.connectors : [], watchOut: pk.watchOut || '', writtenAt: now() };
-          done++;
-        });
+      /* A pack is placed as soon as the stream has written it, and the full
+         reply at the end only places the ones still missing. */
+      var placed = {};
+      function place(pk) {
+        var o = findOp(pk.id) || chunk.filter(function (x) { return norm(x.title) === norm(pk.title); })[0];
+        if (!o || placed[o.id]) return;
+        placed[o.id] = true;
+        map[o.id] = { id: o.id, title: o.title, kind: pk.kind || o.build, artefactName: pk.artefactName || '',
+          interview: pk.interview || '', artefact: pk.artefact || '', firstRun: pk.firstRun || '',
+          connectors: Array.isArray(pk.connectors) ? pk.connectors : [], watchOut: pk.watchOut || '', writtenAt: now() };
+        done++;
+        RUN.packing.done = done + failed;
+        renderIfPrompts();
+      }
+      return askJSON(promptsPrompt(chunk), 'prompts', function (key, pk) { if (key === 'packs') place(pk); }).then(function (j) {
+        ((j && j.packs) || []).forEach(place);
       }).catch(function (e) {
-        failed += chunk.length;
+        failed += chunk.filter(function (x) { return !placed[x.id]; }).length;
         log('Prompt pack error: ' + (e && (e.code + ' ' + e.message)));
       }).then(function () {
         RUN.packing.done = done + failed;
@@ -480,9 +579,9 @@
       return savePacks(map);
     }).then(function () {
       RUN.packing = null;
-      setAiStatus(RUN.source !== 'none' ? 'live' : 'idle');
       log('Prompt packs written: ' + done + (failed ? ', failed: ' + failed : ''));
-      toast(done ? done + ' prompt pack' + (done === 1 ? '' : 's') + ' ready' + (failed ? ', ' + failed + ' failed' : '') : 'Nothing came back. Check the AI line in the sidebar.');
+      if (done) aiDone('Prompt packs', [done + ' ready'].concat(failed ? [failed + ' failed'] : []));
+      else { setAiStatus(RUN.source !== 'none' ? 'live' : 'idle'); toast('Nothing came back. Check the AI line in the sidebar.'); }
       render();
     });
   }

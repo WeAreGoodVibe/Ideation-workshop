@@ -75,9 +75,7 @@ async function isFacilitator(token, workshopId) {
 }
 
 /* Claude, from the server. The key never reaches a browser. */
-async function askClaude(prompt, opts) {
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) throw new Error('ANTHROPIC_API_KEY is not set on the server');
+function claudeBody(prompt, opts) {
   const body = {
     model: process.env.ANTHROPIC_MODEL || 'claude-opus-5',
     max_tokens: (opts && opts.maxTokens) || 6000,
@@ -85,16 +83,56 @@ async function askClaude(prompt, opts) {
     messages: [{ role: 'user', content: prompt }]
   };
   if (opts && opts.schema) body.output_config.format = { type: 'json_schema', schema: opts.schema };
-  const r = await fetch('https://api.anthropic.com/v1/messages', {
+  return body;
+}
+function claudeFetch(body) {
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key) throw new Error('ANTHROPIC_API_KEY is not set on the server');
+  return fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
     body: JSON.stringify(body)
   });
+}
+async function askClaude(prompt, opts) {
+  const r = await claudeFetch(claudeBody(prompt, opts));
   const j = await r.json();
   if (!r.ok) throw new Error('anthropic ' + r.status + ': ' + ((j.error && j.error.message) || ''));
   if (j.stop_reason === 'refusal') throw new Error('The model declined this window.');
   const text = (j.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
   return parseLooseJSON(text);
+}
+
+/* The same call, streamed. It resolves once Claude has accepted the request,
+   so a refused key or a bad request still throws before anything is sent to
+   the browser; after that, onText gets each piece of the reply as it is
+   written and the returned promise `done` settles with the stop reason. */
+async function streamClaude(prompt, opts, onText) {
+  const body = claudeBody(prompt, opts); body.stream = true;
+  const r = await claudeFetch(body);
+  if (!r.ok) {
+    let j = {}; try { j = await r.json(); } catch (e) {}
+    throw new Error('anthropic ' + r.status + ': ' + ((j.error && j.error.message) || ''));
+  }
+  const done = (async () => {
+    const decoder = new TextDecoder();
+    let buf = '', stop = null;
+    for await (const chunk of r.body) {
+      buf += decoder.decode(chunk, { stream: true });
+      let i;
+      while ((i = buf.indexOf('\n\n')) >= 0) {
+        const block = buf.slice(0, i); buf = buf.slice(i + 2);
+        const data = block.split('\n').filter(l => l.startsWith('data:')).map(l => l.slice(5).trim()).join('');
+        if (!data) continue;
+        let ev; try { ev = JSON.parse(data); } catch (e) { continue; }
+        if (ev.type === 'content_block_delta' && ev.delta && ev.delta.type === 'text_delta') onText(ev.delta.text);
+        else if (ev.type === 'message_delta' && ev.delta && ev.delta.stop_reason) stop = ev.delta.stop_reason;
+        else if (ev.type === 'error') throw new Error('anthropic: ' + ((ev.error && ev.error.message) || 'stream error'));
+      }
+    }
+    return stop;
+  })();
+  return { done };
 }
 function parseLooseJSON(text) {
   try { return JSON.parse(text); } catch (e) {}
@@ -104,4 +142,4 @@ function parseLooseJSON(text) {
   throw new Error('No JSON in the model reply');
 }
 
-module.exports = { json, readBody, tokenFromRequest, userFromRequest, rpcAs, sbGet, sbPost, sbPatch, isFacilitator, askClaude, SUPABASE_URL, ANON };
+module.exports = { json, readBody, tokenFromRequest, userFromRequest, rpcAs, sbGet, sbPost, sbPatch, isFacilitator, askClaude, streamClaude, SUPABASE_URL, ANON };

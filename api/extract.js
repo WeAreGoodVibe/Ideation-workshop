@@ -1,9 +1,10 @@
-/* POST /api/extract  { workshopId, prompt, mode: "extract" | "second" | "prompts" }
+/* POST /api/extract  { workshopId, prompt, mode: "extract" | "second" | "prompts", stream }
    Facilitators only. Runs the prompt the page built through Claude with the
-   server-side key and returns the parsed JSON. The page inserts the rows
+   server-side key and returns the parsed JSON, or with stream set, the reply
+   as it is written. The page inserts the rows
    itself under its own row-level-security rights. */
 'use strict';
-const { json, readBody, tokenFromRequest, userFromRequest, isFacilitator, askClaude } = require('./_lib');
+const { json, readBody, tokenFromRequest, userFromRequest, isFacilitator, askClaude, streamClaude } = require('./_lib');
 
 /* The team tags come from the workshop (the page sends them); this list is
    only the fallback for an old page that does not. */
@@ -67,12 +68,31 @@ module.exports = async (req, res) => {
     if (!body.workshopId || !body.prompt) return json(res, 400, { error: 'workshopId and prompt are required' });
     if (!(await isFacilitator(tokenFromRequest(req), body.workshopId))) return json(res, 403, { error: 'Facilitators only' });
     if (String(body.prompt).length > 200000) return json(res, 413, { error: 'Prompt too long' });
-    let result;
-    if (body.mode === 'second') result = await askClaude(body.prompt, { effort: 'high' });
-    else if (body.mode === 'prompts') result = await askClaude(body.prompt, { effort: 'low', maxTokens: 16000, schema: promptsSchema });
-    else result = await askClaude(body.prompt, { effort: 'low', schema: extractSchema(functionsFrom(body)) });
-    return json(res, 200, result);
+    let opts;
+    if (body.mode === 'second') opts = { effort: 'high' };
+    else if (body.mode === 'prompts') opts = { effort: 'low', maxTokens: 16000, schema: promptsSchema };
+    else opts = { effort: 'low', schema: extractSchema(functionsFrom(body)) };
+    if (!body.stream) return json(res, 200, await askClaude(body.prompt, opts));
+    /* Streamed: one JSON object per line. {"t":…} is the next piece of the
+       reply, then {"done":true,"stop":…} or {"error":…}. The page builds the
+       JSON itself and puts each idea on the board as soon as it is whole. */
+    const open = () => {
+      if (res.headersSent) return;
+      res.statusCode = 200;
+      res.setHeader('content-type', 'application/x-ndjson; charset=utf-8');
+      res.setHeader('cache-control', 'no-store');
+      res.setHeader('x-accel-buffering', 'no');
+    };
+    const out = await streamClaude(body.prompt, opts, t => { open(); res.write(JSON.stringify({ t }) + '\n'); });
+    open();
+    try {
+      const stop = await out.done;
+      res.end(JSON.stringify(stop === 'refusal' ? { error: 'The model declined this window.' } : { done: true, stop }) + '\n');
+    } catch (e) {
+      res.end(JSON.stringify({ error: String(e.message || e) }) + '\n');
+    }
   } catch (e) {
+    if (res.headersSent) return res.end(JSON.stringify({ error: String(e.message || e) }) + '\n');
     return json(res, 500, { error: String(e.message || e) });
   }
 };

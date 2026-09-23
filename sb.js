@@ -229,8 +229,12 @@ window.SB = (function () {
     if (list.length) { var r = await client.from('second_ideas').insert(list.map(function (i, n) { return { workshop_id: ws.id, key: 'A' + (n + 1), title: i.title, fn: i.fn || i.function || 'Both', phase: i.phase || '', surface: i.surface || '', build: i.build || '', what: i.what || '', why: i.why || '', lift: i.lift || '', comparator: i.comparator || '', confidence: i.confidence || 'Medium', origin: 'ai', sort: n + 1 }; })); if (r.error) fail(r.error, 'Ideas not saved'); }
     refresh('second_ideas');
   }
-  async function api(mode, prompt, extra) {
-    var r = await fetch('/api/extract', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + session.access_token }, body: JSON.stringify(Object.assign({ workshopId: ws.id, prompt: prompt, mode: mode }, extra || {})) });
+  /* With onText, the server streams the reply and onText gets each piece as
+     it is written; the promise then resolves with the whole reply as text,
+     which the caller parses. Without it, the promise resolves with JSON. */
+  async function api(mode, prompt, extra, onText) {
+    var r = await fetch('/api/extract', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + session.access_token }, body: JSON.stringify(Object.assign({ workshopId: ws.id, prompt: prompt, mode: mode, stream: !!onText }, extra || {})) });
+    if (onText && r.ok && r.body && /ndjson/.test(r.headers.get('content-type') || '')) return readStream(r, onText);
     /* A timed-out or crashed function returns Vercel's plain-text error page,
        not JSON, so read text first and say what happened. */
     var text = await r.text(), j = null;
@@ -239,6 +243,28 @@ window.SB = (function () {
     if (!r.ok) throw { code: 'http_' + r.status, message: (j && j.error) || r.statusText || text.slice(0, 140) };
     if (!j) throw { code: 'invalid_json', message: 'The server reply was not JSON' };
     return j;
+  }
+
+  async function readStream(r, onText) {
+    var reader = r.body.getReader(), decoder = new TextDecoder(), buf = '', whole = '', end = null;
+    function line(l) {
+      if (!l.trim()) return;
+      var m; try { m = JSON.parse(l); } catch (e) { return; }
+      if (typeof m.t === 'string') { whole += m.t; onText(m.t); }
+      else if (m.error) end = { code: 'server', message: m.error };
+      else if (m.done) end = end || { ok: true, stop: m.stop };
+    }
+    for (;;) {
+      var step = await reader.read();
+      if (step.done) break;
+      buf += decoder.decode(step.value, { stream: true });
+      var i; while ((i = buf.indexOf('\n')) >= 0) { line(buf.slice(0, i)); buf = buf.slice(i + 1); }
+    }
+    line(buf + decoder.decode());
+    if (!end) throw { code: 'http_504', message: 'The server stopped part way through the reply. It will try again.' };
+    if (!end.ok) throw end;
+    if (end.stop === 'max_tokens') throw { code: 'max_tokens', message: 'The reply ran out of room before it finished.', text: whole };
+    return whole;
   }
 
   /* --------------------------------------------------------- admin ------ */
