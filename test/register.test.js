@@ -288,6 +288,76 @@ test('consolidation: planned changes apply only when approved, one by one', () =
   assert.deepEqual(g.enablers[0].links.sort(), ['O1', 'O6']);
 });
 
+test('consolidation: a demoted row marked as a duplicate merges into the other demoted row', () => {
+  const reg = R.empty();
+  ['Reconcile supplier statements monthly', 'Create the Statements project with the supplier list', 'Set up a Statements project holding the supplier list', 'Export the ledger to CSV']
+    .forEach((t, i) => R.createOpportunity(reg, { title: t, evidence: ev('quote ' + i) }, { createdBy: 'migration' }));
+  const changes = R.planChanges(reg, {
+    opportunities: [{ key: 'O1', title: 'Reconcile supplier statements monthly' }],
+    placements: [
+      { id: 'O1', type: 'opportunity', confidence: 0.95 },
+      { id: 'O2', type: 'setup_action', parent: 'O1', confidence: 0.9, text: 'Create the Statements project with the supplier list' },
+      { id: 'O3', type: 'setup_action', parent: 'O1', duplicateOf: 'O2', confidence: 0.9, text: 'Set up a Statements project holding the supplier list' },
+      { id: 'O4', type: 'build_step', parent: 'O1', confidence: 0.9 }
+    ]
+  });
+  assert.deepEqual(changes.map(c => c.kind), ['demote', 'demote', 'demote', 'merge']);
+  const merge = changes[3];
+  assert.deepEqual(merge.requires, [changes[1].id, changes[0].id], 'the merge waits for both demotes');
+  const all = {}; changes.forEach(c => { all[c.id] = true; });
+  const out = R.applyChanges(reg, changes, all);
+  assert.ok(out.results.every(r => r.status === 'applied'), JSON.stringify(out.results));
+  const kids = R.childrenOf(out.register, 'O1').filter(i => !i.auto);
+  assert.equal(kids.filter(i => i.type === 'setup_action').length, 1);
+  assert.equal(R.resolve(out.register, 'O3'), R.resolve(out.register, 'O2'), 'the old ID still resolves');
+  assert.equal(R.findItem(out.register, R.resolve(out.register, 'O2')).evidence.length, 2, 'evidence kept');
+  const d = {}; changes.forEach(c => { d[c.id] = c !== changes[0]; });
+  const partial = R.applyChanges(reg, changes, d);
+  assert.equal(partial.results[3].status, 'skipped', 'no merge if its target was never demoted');
+});
+
+test('consolidation: siblings worded almost the same become a proposed merge, even if the model missed it', () => {
+  const reg = R.empty();
+  ['Reconcile supplier statements monthly', 'Load the supplier master list into the Statements project', 'Load the supplier master list as Statements project context', 'Load the ledger export']
+    .forEach((t, i) => R.createOpportunity(reg, { title: t, evidence: ev('quote ' + i) }, { createdBy: 'migration' }));
+  const changes = R.planChanges(reg, {
+    opportunities: [{ key: 'O1', title: 'Reconcile supplier statements monthly' }],
+    placements: [
+      { id: 'O1', type: 'opportunity', confidence: 0.95 },
+      { id: 'O2', type: 'setup_action', parent: 'O1', confidence: 0.9 },
+      { id: 'O3', type: 'setup_action', parent: 'O1', confidence: 0.9 },
+      { id: 'O4', type: 'build_step', parent: 'O1', confidence: 0.9 }
+    ]
+  });
+  const merges = changes.filter(c => c.kind === 'merge');
+  assert.equal(merges.length, 1, 'only the same-type pair');
+  assert.equal(merges[0].target, 'O3'); assert.equal(merges[0].into, 'O2');
+  assert.match(merges[0].reason, /similarity/);
+  const d = {}; changes.forEach(c => { d[c.id] = c.kind !== 'merge'; });
+  const kept = R.applyChanges(reg, changes, d).register;
+  assert.equal(R.childrenOf(kept, 'O1').filter(i => i.type === 'setup_action').length, 2, 'a rejected merge keeps both');
+});
+
+test('consolidation: learning rows marked as repeats end up as one Learning item, and a loop does not break it', () => {
+  const reg = R.empty();
+  ['Reconcile supplier statements monthly', 'Keep a prompt library for the team', 'Store shared prompts in one team folder', 'Use dictation for long prompts']
+    .forEach((t, i) => R.createOpportunity(reg, { title: t, evidence: ev('quote ' + i) }, { createdBy: 'migration' }));
+  const changes = R.planChanges(reg, {
+    opportunities: [{ key: 'O1', title: 'Reconcile supplier statements monthly' }],
+    placements: [
+      { id: 'O1', type: 'opportunity', confidence: 0.95 },
+      { id: 'O2', type: 'learning', duplicateOf: 'O3', module: 'Sharing prompts', confidence: 0.9 },
+      { id: 'O3', type: 'learning', duplicateOf: 'O2', module: 'Sharing prompts', confidence: 0.9 },
+      { id: 'O4', type: 'learning', module: 'Voice prompting', confidence: 0.9 }
+    ]
+  });
+  const all = {}; changes.forEach(c => { all[c.id] = true; });
+  const out = R.applyChanges(reg, changes, all);
+  assert.ok(out.results.every(r => r.status === 'applied'), JSON.stringify(out.results));
+  assert.equal(out.register.learning.length, 2);
+  assert.equal(R.resolve(out.register, 'O2'), R.resolve(out.register, 'O3'));
+});
+
 test('consolidation: rejecting a proposed new Opportunity skips the changes that need it', () => {
   const reg = R.empty();
   R.createOpportunity(reg, { title: 'Match invoice to purchase order' });

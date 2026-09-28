@@ -26,6 +26,20 @@ function check(acc, exports, after, before) {
   after.opportunities.forEach((a, i) => after.opportunities.slice(i + 1).forEach(b => { if (R.similarity(a.title, b.title) >= R.THRESHOLDS.merge) dupes.push(a.id + '~' + b.id); }));
   after.items.filter(x => !x.auto).forEach((a, i, all) => all.slice(i + 1).forEach(b => { if (a.parentId === b.parentId && a.type === b.type && R.similarity(a.text, b.text) >= R.THRESHOLDS.merge) dupes.push(a.id + '~' + b.id); }));
   pass(!dupes.length, 'No duplicate rows' + (dupes.length ? ' (' + dupes.join(', ') + ')' : ''));
+  const lDupes = [];
+  after.learning.forEach((a, i) => after.learning.slice(i + 1).forEach(b => { if (R.similarity(a.text, b.text) >= R.THRESHOLDS.merge) lDupes.push(a.id + '~' + b.id); }));
+  pass(!lDupes.length, 'No duplicate Learning items' + (lDupes.length ? ' (' + lDupes.join(', ') + ')' : ''));
+  if (acc.maxChildShare) {
+    const kids = after.items.filter(x => !x.auto), per = {};
+    kids.forEach(x => { per[x.parentId] = (per[x.parentId] || 0) + 1; });
+    const [top, most] = Object.entries(per).sort((x, y) => y[1] - x[1])[0] || ['none', 0];
+    const share = kids.length ? most / kids.length : 0;
+    pass(share <= acc.maxChildShare, 'No Opportunity holds more than ' + Math.round(acc.maxChildShare * 100) + '% of children (' + top + ' holds ' + most + ' of ' + kids.length + ', ' + Math.round(share * 100) + '%)');
+  }
+  if (acc.maxBlockedShare) {
+    const opps = after.opportunities.filter(o => o.status !== 'Parked'), blocked = opps.filter(o => R.isBlocked(after, o.id));
+    pass(blocked.length <= acc.maxBlockedShare * opps.length, 'Blocked on no more than ' + Math.round(acc.maxBlockedShare * 100) + '% of Opportunities (' + blocked.length + ' of ' + opps.length + ')');
+  }
   acc.checks.forEach(ch => {
     if (ch.enablerText) {
       const re = new RegExp(ch.enablerText, 'i');
