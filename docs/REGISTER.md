@@ -56,4 +56,5 @@ Additive. Nothing the flat board reads or writes changed.
 - A child takes its workshop from its Opportunity, and an Enabler link must join one workshop, so row level security cannot be sidestepped by pointing at another workshop's rows.
 - `register_move_votes(from, to)` moves votes when an Opportunity is merged or folded; facilitators only.
 - Members read, facilitators write. Participants still add ideas through the existing `opportunities` policies.
+- `notes` (the existing column) is now read and written by the register. A merged or demoted Opportunity's notes are appended to the one that survives, labelled with the old ID.
 - An Opportunity from before this change gets its Open questions for a missing owner, trigger or time the first time a register change touches it.

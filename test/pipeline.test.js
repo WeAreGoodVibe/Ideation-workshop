@@ -135,3 +135,14 @@ test('September fixture: 21 Sep is a subset of 22 Sep, and 170 rows remain acros
   assert.equal(reg.opportunities.length, 170, 'every row imports, none lost');
   assert.ok(!/switzerland|rolex|cartier|watchswiss/i.test(JSON.stringify(fx)), 'no client, brand or domain names in the fixture');
 });
+
+test('a flat export keeps its Notes, and consolidation shows them to the model', () => {
+  const reg = P.flatRowsToRegister([
+    { ID: 'O1', Opportunity: 'Reconcile supplier statements monthly', Notes: 'Why not raised: two of the four laptops cannot save to the shared drive.' },
+    { ID: 'O2', Opportunity: 'Export the ledger to CSV' }
+  ]);
+  assert.equal(reg.opportunities[0].notes, 'Why not raised: two of the four laptops cannot save to the shared drive.');
+  const row = P.registerRows(reg)[0].split(' | ');
+  assert.equal(row.length, 11, 'every row has the same columns, notes included');
+  assert.match(row[9], /cannot save to the shared drive/);
+});

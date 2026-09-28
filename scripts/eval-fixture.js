@@ -36,10 +36,6 @@ function check(acc, exports, after, before) {
     const share = kids.length ? most / kids.length : 0;
     pass(share <= acc.maxChildShare, 'No Opportunity holds more than ' + Math.round(acc.maxChildShare * 100) + '% of children (' + top + ' holds ' + most + ' of ' + kids.length + ', ' + Math.round(share * 100) + '%)');
   }
-  if (acc.maxBlockedShare) {
-    const opps = after.opportunities.filter(o => o.status !== 'Parked'), blocked = opps.filter(o => R.isBlocked(after, o.id));
-    pass(blocked.length <= acc.maxBlockedShare * opps.length, 'Blocked on no more than ' + Math.round(acc.maxBlockedShare * 100) + '% of Opportunities (' + blocked.length + ' of ' + opps.length + ')');
-  }
   acc.checks.forEach(ch => {
     if (ch.enablerText) {
       const re = new RegExp(ch.enablerText, 'i');

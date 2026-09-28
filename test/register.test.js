@@ -358,6 +358,16 @@ test('consolidation: learning rows marked as repeats end up as one Learning item
   assert.equal(R.resolve(out.register, 'O2'), R.resolve(out.register, 'O3'));
 });
 
+test('notes travel with a merged or demoted Opportunity, labelled with where they came from', () => {
+  const reg = R.empty();
+  R.createOpportunity(reg, { title: 'Reconcile supplier statements monthly', notes: 'Owner is on leave in March.' });
+  R.createOpportunity(reg, { title: 'Supplier statement reconciliation', notes: 'Two laptops cannot save to the shared drive.' });
+  R.createOpportunity(reg, { title: 'Export the ledger to CSV', notes: 'Export times out over 5,000 lines.' });
+  R.mergeOpportunities(reg, 'O2', 'O1');
+  R.demote(reg, 'O3', 'O1', 'build_step');
+  assert.equal(R.findOpp(reg, 'O1').notes, 'Owner is on leave in March.\nO2: Two laptops cannot save to the shared drive.\nO3: Export times out over 5,000 lines.');
+});
+
 test('consolidation: rejecting a proposed new Opportunity skips the changes that need it', () => {
   const reg = R.empty();
   R.createOpportunity(reg, { title: 'Match invoice to purchase order' });

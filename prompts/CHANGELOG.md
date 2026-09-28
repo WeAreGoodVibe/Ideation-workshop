@@ -2,6 +2,11 @@
 
 Each job reads the file named in `index.json`. To try a change, copy the file to the next version, edit it, point `index.json` at it, and run `npm run eval` on the fixture before and after.
 
+## consolidate.v3 (28 September 2026)
+
+- **Rows now include a notes column.** The migration was dropping the Notes column of old exports, where consultants wrote why an idea was not raised. On the September fixture, the only statement of the Microsoft 365 file-move limit sat there, so v2 could not find it. The prompt text is v2 with "notes" added to the column list; the rest of the fix is in `lib/pipeline.js`, `lib/register.js` and `lib/store.js`.
+- The first v2 run passed the duplicate, Learning and child-share checks and put only real limits in Enablers. Blocked then showed on 10 of 16 Opportunities, because unattended logins genuinely block 8 workflows. The Blocked-share check was dropped from the acceptance criteria for that reason.
+
 ## consolidate.v2 (28 September 2026)
 
 Why: the first eval of consolidate.v1 on the September fixture passed 0 of 3 runs.

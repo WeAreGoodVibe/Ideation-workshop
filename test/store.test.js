@@ -66,3 +66,13 @@ test('an updated field writes only that field', () => {
   R.findOpp(after, 'O1').status = 'Qualified';
   assert.deepEqual(ST.diff(before, after), [{ table: 'opportunities', op: 'update', uid: 'u1', id: 'O1', row: { status: 'Qualified' } }]);
 });
+
+test('notes load from the database and a changed note writes only that field', () => {
+  const r = rows(); r.opportunities[0].notes = 'Only one machine could move files.';
+  const reg = ST.fromRows(r);
+  assert.equal(reg.opportunities[0].notes, 'Only one machine could move files.');
+  const after = R.clone(reg); after.opportunities[0].notes += ' Check the others.';
+  const ops = ST.diff(reg, after);
+  assert.equal(ops.length, 1);
+  assert.deepEqual(Object.keys(ops[0].row), ['notes']);
+});
