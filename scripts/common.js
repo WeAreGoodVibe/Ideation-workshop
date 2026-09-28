@@ -6,6 +6,10 @@ const path = require('path');
 const XLSX = require('../vendor/xlsx.full.min.js');
 const { streamClaude, parseLooseJSON } = require('../api/_lib.js');
 
+/* Cloud sessions keep ANTHROPIC_API_KEY for their own sign-in, so the scripts
+   also read the key from EVAL_ANTHROPIC_API_KEY. */
+if (!process.env.ANTHROPIC_API_KEY && process.env.EVAL_ANTHROPIC_API_KEY) process.env.ANTHROPIC_API_KEY = process.env.EVAL_ANTHROPIC_API_KEY;
+
 const REPO = path.resolve(__dirname, '..');
 const insideRepo = p => { const r = path.relative(REPO, path.resolve(p)); return !r.startsWith('..') && !path.isAbsolute(r); };
 

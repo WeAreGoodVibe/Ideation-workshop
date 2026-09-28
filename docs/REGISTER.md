@@ -42,7 +42,7 @@ node scripts/anonymise-fixture.js <exports folder> --map <names.json>
 node scripts/migrate-flat-export.js plan <fixture or exports folder> --out <scratch folder>
 # read review.md, set each change in decisions.json to true or false
 node scripts/migrate-flat-export.js apply --out <scratch folder>
-npm run eval    # needs ANTHROPIC_API_KEY; runs the fixture three times against test/fixtures/acceptance.json
+npm run eval    # needs ANTHROPIC_API_KEY, or EVAL_ANTHROPIC_API_KEY in a cloud session; runs the fixture three times against test/fixtures/acceptance.json
 ```
 
 ## The database (migration 003)
