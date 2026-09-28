@@ -73,9 +73,10 @@ module.exports = async (req, res) => {
        that thinking counts against them: at high effort over a long transcript
        it can use most of the old 6000 on its own, which cut the reply off. */
     let opts;
-    /* capture, second2 and consolidate are the hierarchical register's
-       jobs; their schemas live in lib/pipeline.js with the rules that read
-       the replies. extract and second stay for the flat board until it moves. */
+    /* capture, second2 and consolidate are the register's jobs; their schemas
+       live in lib/pipeline.js with the rules that read the replies. extract
+       and second are the flat board's, kept only for a page still cached from
+       before the register. */
     if (body.mode === 'capture') opts = { effort: 'low', maxTokens: 16000, schema: PIPE.captureSchema(functionsFrom(body)) };
     else if (body.mode === 'second2') opts = { effort: 'high', maxTokens: 32000, schema: PIPE.captureSchema(functionsFrom(body)) };
     else if (body.mode === 'consolidate') opts = { effort: 'high', maxTokens: 64000, schema: PIPE.consolidateSchema(functionsFrom(body)) };

@@ -1,6 +1,21 @@
 # The hierarchical register
 
-Work in progress on branch `claude/zen-curie-yb0fce`. Stages 1, 2 and 4 are done: the model, its rules, the prompts, the consolidation pipeline and the database. The page still runs the flat board until stage 5.
+On branch `claude/zen-curie-yb0fce`. Stages 1 to 5 are done: the model, its rules, the prompts, the eval, the database, and the page. The page runs the register for every workshop; the flat board is gone.
+
+## The page (stage 5)
+
+| Screen | What changed |
+|---|---|
+| Register (was Opportunities) | One card per workflow, detail folded underneath by type, Blocked and Needs qualification worked out. Tabs for Enablers, Learning, To sort and, after a consolidation, Review changes. |
+| Live capture | Reads with the `capture` prompt: attach before create, low confidence to To sort. A window is saved as one change. |
+| Second viewpoint | Writes Proposed workflows and missed detail into the register. A Proposed workflow counts once someone presses Client confirms. |
+| Consolidate session | Claude proposes the tidy register; each change is ticked or not, then applied. The server stops a call at 5 minutes, so a register over about 90 rows may be cut off: use the migration script for a large old export. |
+| Prompts and skills | Each pack now sees the workflow's build steps, guardrails, dependencies, setup and open questions. |
+| Export | Opportunity Register (one row per workflow; ID and Opportunity keep their names so the migration script still reads it), Workflow Detail, Enablers, Learning Backlog, To Sort, then the tabs as before. |
+
+- Every change goes through `change()` in `app.js`, which saves the difference with `SB.saveRegister`, one change at a time. A new row's database id is carried into the next save so nothing is inserted twice.
+- Participants cannot write the register tables. Their ideas go in as plain Opportunity rows and their votes as before; the register reads both.
+- An old saved board in a browser (flat ideas in localStorage) is turned into Opportunities the first time the page loads it.
 
 ## The model
 
@@ -26,7 +41,7 @@ Work in progress on branch `claude/zen-curie-yb0fce`. Stages 1, 2 and 4 are done
 | `lib/pipeline.js` | Builds prompts from `prompts/`, holds the JSON schemas, turns replies into captures or reviewable changes, imports old flat exports. |
 | `prompts/` | Versioned prompt files. `index.json` picks the active version. Log every change in `CHANGELOG.md`. |
 | `api/extract.js` | New modes `capture`, `second2`, `consolidate` with schemas from `lib/pipeline.js`. |
-| `sb.js` | `loadRegister()` and `saveRegister(before, after)`. Register tables raise a separate `register` event, so the flat board is untouched. |
+| `sb.js` | `loadRegister()` and `saveRegister(before, after)`. Register tables raise a `register` event; the page reloads the register on it. |
 | `supabase/migration-003-register.sql` | Applied to the live project on 28 September 2026 as `hierarchical_register`, `register_revoke_trigger_rpc` and `register_keep_ids_and_move_votes`. Undo: `migration-003-register-undo.sql`. |
 | `scripts/` | Anonymise real exports, migrate old exports, run the eval. |
 | `test/` | `npm test` runs the unit tests. No network. |

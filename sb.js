@@ -322,6 +322,7 @@ window.SB = (function () {
      children, children moved before an old parent is deleted, votes moved
      before a merged Opportunity goes. Stops at the first failure and says
      which write failed; the next load shows what did land. */
+  var LIST_OF = { opportunities: 'opportunities', register_items: 'items', enablers: 'enablers', learning_items: 'learning', triage_items: 'triage' };
   async function saveRegister(before, after) {
     var ops = window.STORE.diff(before, after), done = 0;
     var oppUid = {}, enUid = {};
@@ -337,6 +338,9 @@ window.SB = (function () {
           res = await client.from(o.table).insert(row).select('id').single();
           if (!res.error && o.table === 'opportunities') oppUid[o.id] = res.data.id;
           if (!res.error && o.table === 'enablers') enUid[o.id] = res.data.id;
+          /* The new row's database id goes back onto `after`, so the page can
+             carry it into the next save and never insert the row twice. */
+          if (!res.error && o.id && LIST_OF[o.table]) { var mine = after[LIST_OF[o.table]].filter(function (x) { return x.id === o.id; })[0]; if (mine) mine.uid = res.data.id; }
         } else if (o.op === 'update') res = await client.from(o.table).update(row).eq('id', o.uid);
         else if (o.op === 'delete') res = await client.from(o.table).delete().eq('id', o.uid);
         else if (o.op === 'link') res = await client.from('enabler_links').insert({ enabler_id: need(enUid, o.enabler, 'Enabler'), opportunity_id: need(oppUid, o.opp, 'Opportunity'), workshop_id: ws.id });

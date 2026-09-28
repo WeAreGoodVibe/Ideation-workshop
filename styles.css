@@ -471,3 +471,62 @@ body.present .nav { width: var(--nav-w); }
   .op, .badge.bump, .reveal__hint svg { animation: none; }
   .sheet { transition: none; }
 }
+
+/* ------------------------------------------------------------- register -- */
+/* Each card is one recurring workflow; its detail folds out underneath.
+   Colour carries state only: red border for Blocked, amber for a gap in the
+   unit test, dimmed for Parked, a dashed outline for Proposed. */
+.rsum { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 2px; background: var(--line); border: 1px solid var(--line); border-radius: var(--sc-r-md); overflow: hidden; margin-bottom: var(--sc-4); }
+.rsum__c { background: var(--sc-surface); padding: 12px 16px; display: flex; flex-direction: column; gap: 2px; }
+.rsum__c b { font-family: var(--sc-font-display); font-size: 1.7rem; line-height: 1; color: var(--sc-accent); font-variant-numeric: tabular-nums; }
+.rsum__c span { font-size: 0.8rem; color: var(--sc-ink-soft); }
+.regtabs { margin-bottom: var(--sc-4); }
+.regtabs .tabn { font-variant-numeric: tabular-nums; opacity: 0.7; margin-left: 2px; }
+.regtabs button.attn .tabn { color: var(--warn); opacity: 1; font-weight: 800; }
+.rwarn { border: 1px solid color-mix(in oklab, var(--warn) 55%, transparent); border-left-width: 3px; border-radius: var(--sc-r-md); padding: 10px 14px; margin-bottom: 10px; font-size: 0.9rem; }
+.rops { display: grid; gap: 10px; }
+.rop { display: grid; grid-template-columns: 3.2rem 1fr auto; gap: 14px; padding: 16px; background: var(--sc-surface); border: 1px solid var(--line); border-left: 3px solid var(--line-strong); border-radius: var(--sc-r-md); }
+.rop--blocked { border-left-color: var(--bad); }
+.rop--parked { opacity: 0.55; }
+.rop__main { min-width: 0; }
+.unit { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 8px; font-size: 0.88rem; }
+.unit .k { color: var(--sc-ink-soft); }
+.unit .miss { color: var(--warn); font-weight: 600; }
+.rblock { margin-top: 8px; font-size: 0.85rem; color: var(--bad); }
+.rblock .linkbtn { color: var(--bad); font-weight: 700; }
+.chip--blocked { color: var(--bad); border-color: color-mix(in oklab, var(--bad) 60%, transparent); font-weight: 700; }
+.chip--needq { color: var(--warn); border-color: color-mix(in oklab, var(--warn) 60%, transparent); }
+.chip--proposed { color: var(--sc-ink-soft); border-style: dashed; }
+.chip--done { color: var(--ok); border-color: color-mix(in oklab, var(--ok) 55%, transparent); }
+.chip--rst-Qualified, .chip--rst-Inbuild, .chip--rst-Built, .chip--rst-Inuse { color: var(--ok); border-color: color-mix(in oklab, var(--ok) 55%, transparent); }
+.chip--rst-Parked { color: var(--sc-ink-soft); opacity: 0.7; }
+.kids__toggle { margin-top: 10px; background: none; border: 0; padding: 0; font: inherit; font-size: 0.85rem; color: var(--sc-accent); cursor: pointer; text-align: left; }
+.kids__toggle::before { content: "▸ "; }
+.kids__toggle[aria-expanded="true"]::before { content: "▾ "; }
+.kids__toggle:focus-visible { outline: 2px solid var(--sc-accent); outline-offset: 2px; border-radius: 3px; }
+.kids { margin-top: 10px; display: grid; gap: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
+.kids__h { font-size: 0.78rem; font-weight: 800; letter-spacing: 0.04em; color: var(--sc-ink-soft); margin-bottom: 4px; }
+.kids__h--guardrail { color: var(--bad); }
+.kids__h--dependency { color: var(--warn); }
+.kids__group ul, .llist { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.kid { display: grid; grid-template-columns: 3.4rem 1fr auto; gap: 8px; align-items: baseline; font-size: 0.9rem; }
+.kid--done .kid__t { text-decoration: line-through; opacity: 0.6; }
+.kid__id { font-family: var(--sc-font-mono); font-size: 0.75rem; color: var(--sc-ink-soft); }
+.kid__acts { display: inline-flex; gap: 4px; }
+.btn--xs { padding: 2px 7px; font-size: 0.72rem; }
+.enb--done { opacity: 0.6; }
+.tri__place { align-items: flex-end; }
+.tri__place .field { min-width: 12rem; }
+.checks { display: grid; gap: 4px; max-height: 16rem; overflow: auto; padding: 6px; border: 1px solid var(--line); border-radius: var(--sc-r-sm); }
+.review td { vertical-align: top; font-size: 0.88rem; }
+.review input[type="checkbox"] { width: auto; }
+@media (max-width: 720px) {
+  .rop { grid-template-columns: 1fr; }
+  .rop .op__side { align-items: flex-start; flex-direction: row; flex-wrap: wrap; }
+  .kid { grid-template-columns: 1fr; }
+}
+/* Register numbers in the text face: in the monospace face a capital O reads
+   as a zero, and O1.1 must never be misread as 01.1. */
+.rop .op__id, .kid__id, .tri .op__id, .enb .op__id { font-family: var(--sc-font-text); font-weight: 700; font-variant-numeric: tabular-nums; }
+/* On a phone the four top bar buttons wrap instead of pushing the page sideways. */
+@media (max-width: 560px) { .topbar { flex-wrap: wrap; } .topbar__actions { flex: 1 1 100%; flex-wrap: wrap; min-width: 0; } }
