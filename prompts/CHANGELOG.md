@@ -2,6 +2,10 @@
 
 Each job reads the file named in `index.json`. To try a change, copy the file to the next version, edit it, point `index.json` at it, and run `npm run eval` on the fixture before and after.
 
+## consolidate.v5 (28 September 2026)
+
+- v4 passed 1 run in 3. Its merge rule (same owner and trigger) folded "store arrival summaries" into invoice filing in two runs, because Person E does both daily, so one workflow held 41 to 43% of all detail against a limit of 40%. v5 merges only when the output is also the same, and says to keep apart two workflows that each produce their own output.
+
 ## consolidate.v4 (28 September 2026)
 
 - One v3 run in three split payroll into three Opportunities with the same owner and trigger, giving 19 against a target of 12 to 16. v4 adds a count-and-merge step when there are more than fifteen. The example is a month-end close, not payroll, so the fixture still measures the prompt.
