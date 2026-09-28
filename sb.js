@@ -14,7 +14,8 @@
      writes: insertOpportunity, updateOpportunity, deleteOpportunity, vote,
              insertPhase, updatePhase, deletePhase, setName,
              resetVotes, insertSystem, updateSystem, deleteSystem, updateWorkshop, clearPrepared,
-             addTranscript, setAIIdeas, api(mode, prompt)
+             addTranscript, setAIIdeas, api(mode, prompt),
+             loadRegister, saveRegister (the hierarchical register, via lib/store.js)
      admin:  listOrgs, createOrg, listWorkshops, workshopStats, createWorkshop,
              duplicateWorkshop, loadWorkshopData, deleteWorkshop, members,
              bridgeToken, sendLink, joinAnonymously, isAnon, signOut
@@ -145,12 +146,16 @@ window.SB = (function () {
     second_ideas: async function () { var r = await client.from('second_ideas').select('*').eq('workshop_id', ws.id).order('sort'); emit('data', { second: r.data || [] }); }
   };
   refreshers.votes = refreshers.opportunities;
+  /* The register tables only say something changed; the page reloads the
+     register when it is showing it. The flat board never listens for this. */
+  var REGISTER_TABLES = ['register_items', 'enablers', 'enabler_links', 'learning_items', 'triage_items'];
+  REGISTER_TABLES.forEach(function (t) { refreshers[t] = async function () { emit('register', { table: t }); }; });
   function refresh(table) { clearTimeout(refreshT[table]); refreshT[table] = setTimeout(function () { refreshers[table] && refreshers[table]().catch(function (e) { console.warn('refresh', table, e); }); }, 250); }
 
   function subscribe() {
     unsubscribe();
     channel = client.channel('ws-' + ws.id);
-    ['workshops', 'systems', 'phases', 'opportunities', 'votes', 'second_ideas'].forEach(function (t) {
+    ['workshops', 'systems', 'phases', 'opportunities', 'votes', 'second_ideas'].concat(REGISTER_TABLES).forEach(function (t) {
       channel.on('postgres_changes', { event: '*', schema: 'public', table: t, filter: (t === 'workshops' ? 'id' : 'workshop_id') + '=eq.' + ws.id }, function () { refresh(t); });
     });
     channel.subscribe(function (status) { if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') { setTimeout(function () { if (active) subscribe(); }, 4000); } });
@@ -298,6 +303,58 @@ window.SB = (function () {
     return out;
   }
 
+  /* ---------------------------------------------- hierarchical register -- */
+  /* The register in the shape lib/register.js works on (window.STORE turns
+     rows into it). The page changes a copy with the register rules, then
+     hands both copies to saveRegister, which writes only what changed. */
+  async function loadRegister(id) {
+    id = id || ws.id;
+    var t = function (name, order) { var q = client.from(name).select('*').eq('workshop_id', id); return order ? q.order(order) : q; };
+    var r = await Promise.all([t('opportunities', 'seq'), t('register_items', 'seq'), t('enablers', 'seq'), t('enabler_links'), t('learning_items', 'seq'),
+      t('triage_items', 'seq'), t('register_aliases'), t('register_log', 'at'), t('vote_tallies')]);
+    var bad = r.filter(function (x) { return x.error; })[0];
+    if (bad) { emit('toast', 'Could not read the register: ' + bad.error.message); return null; }
+    var tl = {}; (r[8].data || []).forEach(function (x) { tl[x.opportunity_id] = x; });
+    return window.STORE.fromRows({ opportunities: r[0].data, register_items: r[1].data, enablers: r[2].data, enabler_links: r[3].data,
+      learning_items: r[4].data, triage_items: r[5].data, register_aliases: r[6].data, register_log: r[7].data, tallies: tl });
+  }
+  /* Runs the writes in the order lib/store.js gives: parents before
+     children, children moved before an old parent is deleted, votes moved
+     before a merged Opportunity goes. Stops at the first failure and says
+     which write failed; the next load shows what did land. */
+  async function saveRegister(before, after) {
+    var ops = window.STORE.diff(before, after), done = 0;
+    var oppUid = {}, enUid = {};
+    before.opportunities.concat(after.opportunities).forEach(function (o) { if (o.uid) oppUid[o.id] = o.uid; });
+    before.enablers.concat(after.enablers).forEach(function (e) { if (e.uid) enUid[e.id] = e.uid; });
+    var need = function (map, id, what) { if (!map[id]) throw new Error('No ' + what + ' ' + id + ' in the database yet'); return map[id]; };
+    for (var i = 0; i < ops.length; i++) {
+      var o = ops[i], res = null, row = o.row ? Object.assign({}, o.row) : null;
+      try {
+        if (row && 'opportunity_ref' in row) { row.opportunity_id = need(oppUid, row.opportunity_ref, 'Opportunity'); delete row.opportunity_ref; }
+        if (o.op === 'insert') {
+          row.workshop_id = ws.id;
+          res = await client.from(o.table).insert(row).select('id').single();
+          if (!res.error && o.table === 'opportunities') oppUid[o.id] = res.data.id;
+          if (!res.error && o.table === 'enablers') enUid[o.id] = res.data.id;
+        } else if (o.op === 'update') res = await client.from(o.table).update(row).eq('id', o.uid);
+        else if (o.op === 'delete') res = await client.from(o.table).delete().eq('id', o.uid);
+        else if (o.op === 'link') res = await client.from('enabler_links').insert({ enabler_id: need(enUid, o.enabler, 'Enabler'), opportunity_id: need(oppUid, o.opp, 'Opportunity'), workshop_id: ws.id });
+        else if (o.op === 'unlink') res = await client.from('enabler_links').delete().eq('enabler_id', need(enUid, o.enabler, 'Enabler')).eq('opportunity_id', need(oppUid, o.opp, 'Opportunity'));
+        else if (o.op === 'moveVotes') res = await client.rpc('register_move_votes', { p_from: o.fromUid, p_to: need(oppUid, o.to, 'Opportunity') });
+        else if (o.op === 'upsert') res = await client.from(o.table).upsert(Object.assign({ workshop_id: ws.id }, row), { onConflict: 'workshop_id,old_ref' });
+        if (res && res.error) throw res.error;
+        done++;
+      } catch (e) {
+        emit('toast', 'Register saved ' + done + ' of ' + ops.length + ' changes. Stopped at ' + (o.id || o.table) + ': ' + (e.message || e));
+        emit('register', { changed: true });
+        return { ok: false, done: done, total: ops.length, failedAt: o, error: String(e.message || e) };
+      }
+    }
+    emit('register', { changed: true });
+    return { ok: true, done: done, total: ops.length };
+  }
+
   /* Everything in one workshop, in the shapes the board and the Excel export
      already use, without opening it. Behind "save a backup before you delete
      this" and nothing else. */
@@ -385,6 +442,7 @@ window.SB = (function () {
     resetVotes: resetVotes,
     insertSystem: insertSystem, updateSystem: updateSystem, deleteSystem: deleteSystem, updateWorkshop: updateWorkshop, clearPrepared: clearPrepared,
     addTranscript: addTranscript, setAIIdeas: setAIIdeas, api: api,
+    loadRegister: loadRegister, saveRegister: saveRegister,
     listOrgs: listOrgs, createOrg: createOrg, listWorkshops: listWorkshops, workshopStats: workshopStats, createWorkshop: createWorkshop, duplicateWorkshop: duplicateWorkshop, loadWorkshopData: loadWorkshopData, deleteWorkshop: deleteWorkshop, members: members, bridgeToken: bridgeToken, myVotesUsed: myVotesUsed
   };
 })();

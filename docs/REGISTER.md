@@ -1,6 +1,6 @@
 # The hierarchical register
 
-Work in progress on branch `claude/zen-curie-yb0fce`. Stages 1 and 2 are done: the model, its rules, the prompts and the consolidation pipeline. The page still runs the flat board until stage 5.
+Work in progress on branch `claude/zen-curie-yb0fce`. Stages 1, 2 and 4 are done: the model, its rules, the prompts, the consolidation pipeline and the database. The page still runs the flat board until stage 5.
 
 ## The model
 
@@ -22,9 +22,12 @@ Work in progress on branch `claude/zen-curie-yb0fce`. Stages 1 and 2 are done: t
 | File | Job |
 |---|---|
 | `lib/register.js` | Every rule: attach before create, duplicate merge, Enabler detection, Blocked, promote and demote, budget warnings, consolidation changes. Pure, runs in the browser and Node. |
+| `lib/store.js` | Database rows to register and back. `diff` returns the writes in a safe order: parents before children, children moved before an old parent is deleted, votes moved before a merged Opportunity goes. |
 | `lib/pipeline.js` | Builds prompts from `prompts/`, holds the JSON schemas, turns replies into captures or reviewable changes, imports old flat exports. |
 | `prompts/` | Versioned prompt files. `index.json` picks the active version. Log every change in `CHANGELOG.md`. |
 | `api/extract.js` | New modes `capture`, `second2`, `consolidate` with schemas from `lib/pipeline.js`. |
+| `sb.js` | `loadRegister()` and `saveRegister(before, after)`. Register tables raise a separate `register` event, so the flat board is untouched. |
+| `supabase/migration-003-register.sql` | Applied to the live project on 28 September 2026 as `hierarchical_register`, `register_revoke_trigger_rpc` and `register_keep_ids_and_move_votes`. Undo: `migration-003-register-undo.sql`. |
 | `scripts/` | Anonymise real exports, migrate old exports, run the eval. |
 | `test/` | `npm test` runs the unit tests. No network. |
 
@@ -41,3 +44,16 @@ node scripts/migrate-flat-export.js plan <fixture or exports folder> --out <scra
 node scripts/migrate-flat-export.js apply --out <scratch folder>
 npm run eval    # needs ANTHROPIC_API_KEY; runs the fixture three times against test/fixtures/acceptance.json
 ```
+
+## The database (migration 003)
+
+Additive. Nothing the flat board reads or writes changed.
+
+- `opportunities` gained `frequency`, `time_band`, `origin`, `confirmed`, `evidence`, `created_via`, `legacy_ref`. Its status check accepts both the old and the new values; existing rows keep Open until the page moves over.
+- New tables: `register_items`, `enablers`, `enabler_links`, `learning_items`, `triage_items`, `register_aliases`, `register_log`, `register_counters`.
+- `opportunity_blocked` is a view. Blocked is never stored.
+- Numbers come from `register_counters` and only go up. A number the page passes in is kept, so O3.2 on screen is O3.2 after a reload.
+- A child takes its workshop from its Opportunity, and an Enabler link must join one workshop, so row level security cannot be sidestepped by pointing at another workshop's rows.
+- `register_move_votes(from, to)` moves votes when an Opportunity is merged or folded; facilitators only.
+- Members read, facilitators write. Participants still add ideas through the existing `opportunities` policies.
+- An Opportunity from before this change gets its Open questions for a missing owner, trigger or time the first time a register change touches it.
