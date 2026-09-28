@@ -29,7 +29,9 @@ specific headings, tables where they help. I am dyslexic and have ADHD.
 
 ## The open decision
 
-**v4 is active in `prompts/index.json`, and it is the weakest of the recent versions.**
+**Update, 28 September, 4:30pm: v5 was approved and run. It passed 2 of 3, the same as v3, and is active in `prompts/index.json`. The open question is now whether to stop tuning the prompt and add a warning to the review screen instead (see the eval history). The v4 notes below are kept for the record.**
+
+**v4 was active in `prompts/index.json`, and it is the weakest of the recent versions.**
 
 | Version | Runs passed | What went wrong |
 |---|---|---|
@@ -68,6 +70,7 @@ specific headings, tables where they help. I am dyslexic and have ADHD.
 | 2 | v2 | 1 run done, then stopped | Duplicates fixed. The M365 limit was still missed, because the import dropped the Notes column. |
 | 3 | v3 | 2 of 3 | M365 limit found in all 3 runs. One run made 19 workflows. |
 | 4 | v4 | 1 of 3 | 15 workflows every run, but O17 swallowed a separate workflow in 2 runs. |
+| 5 | v5 | 2 of 3 | 15 workflows and the M365 Enabler in every run. One run still folded arrival summaries into O17 (43%). |
 
 **Fixes that came out of these evals:**
 
