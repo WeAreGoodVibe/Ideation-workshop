@@ -4,7 +4,11 @@
   "private": true,
   "description": "Facilitation board for AI opportunity workshops: static front-end, Vercel functions, Supabase backend.",
   "scripts": {
-    "dev": "python3 -m http.server 8765"
+    "dev": "python3 -m http.server 8765",
+    "test": "node --test test/*.test.js",
+    "eval": "node scripts/eval-fixture.js"
   },
-  "engines": { "node": ">=18" }
+  "engines": {
+    "node": ">=18"
+  }
 }

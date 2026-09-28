@@ -1,0 +1,13 @@
+{
+  "_note": "Acceptance criteria for the September fixture. Patterns match the ORIGINAL row titles in the anonymised fixture.",
+  "fixture": "test/fixtures/sept-exports.anon.json",
+  "subsetExport": "2026-09-21",
+  "rawRowsAcross": ["2026-09-22", "2026-09-23"],
+  "rawRows": 170,
+  "opportunities": { "min": 12, "max": 16 },
+  "checks": [
+    { "row": "never.?touch.*images.*column b", "becomes": "guardrail", "parentTitle": "replenish" },
+    { "row": "switch to opus.*invoice batch", "becomes": "learning" },
+    { "row": "(microsoft|m) ?365 connector.*read.?only", "becomes": "enabler", "minLinks": 2 }
+  ]
+}

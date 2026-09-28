@@ -1,10 +1,11 @@
-/* POST /api/extract  { workshopId, prompt, mode: "extract" | "second" | "prompts", stream }
+/* POST /api/extract  { workshopId, prompt, mode: "extract" | "second" | "prompts" | "capture" | "second2" | "consolidate", stream }
    Facilitators only. Runs the prompt the page built through Claude with the
    server-side key and returns the parsed JSON, or with stream set, the reply
    as it is written. The page inserts the rows
    itself under its own row-level-security rights. */
 'use strict';
 const { json, readBody, tokenFromRequest, userFromRequest, isFacilitator, askClaude, streamClaude } = require('./_lib');
+const PIPE = require('../lib/pipeline.js');
 
 /* The team tags come from the workshop (the page sends them); this list is
    only the fallback for an old page that does not. */
@@ -72,7 +73,13 @@ module.exports = async (req, res) => {
        that thinking counts against them: at high effort over a long transcript
        it can use most of the old 6000 on its own, which cut the reply off. */
     let opts;
-    if (body.mode === 'second') opts = { effort: 'high', maxTokens: 32000 };
+    /* capture, second2 and consolidate are the hierarchical register's
+       jobs; their schemas live in lib/pipeline.js with the rules that read
+       the replies. extract and second stay for the flat board until it moves. */
+    if (body.mode === 'capture') opts = { effort: 'low', maxTokens: 16000, schema: PIPE.captureSchema(functionsFrom(body)) };
+    else if (body.mode === 'second2') opts = { effort: 'high', maxTokens: 32000, schema: PIPE.captureSchema(functionsFrom(body)) };
+    else if (body.mode === 'consolidate') opts = { effort: 'high', maxTokens: 64000, schema: PIPE.consolidateSchema(functionsFrom(body)) };
+    else if (body.mode === 'second') opts = { effort: 'high', maxTokens: 32000 };
     else if (body.mode === 'prompts') opts = { effort: 'low', maxTokens: 32000, schema: promptsSchema };
     else opts = { effort: 'low', maxTokens: 16000, schema: extractSchema(functionsFrom(body)) };
     if (!body.stream) return json(res, 200, await askClaude(body.prompt, opts));

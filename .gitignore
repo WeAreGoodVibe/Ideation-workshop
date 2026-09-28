@@ -2,3 +2,7 @@
 node_modules/
 *.log
 .env
+
+# Client exports and anonymisation maps never belong here
+*.xlsx
+*.people.json

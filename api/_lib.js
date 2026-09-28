@@ -142,4 +142,4 @@ function parseLooseJSON(text) {
   throw new Error('No JSON in the model reply');
 }
 
-module.exports = { json, readBody, tokenFromRequest, userFromRequest, rpcAs, sbGet, sbPost, sbPatch, isFacilitator, askClaude, streamClaude, SUPABASE_URL, ANON };
+module.exports = { json, readBody, tokenFromRequest, userFromRequest, rpcAs, sbGet, sbPost, sbPatch, isFacilitator, askClaude, streamClaude, parseLooseJSON, SUPABASE_URL, ANON };
