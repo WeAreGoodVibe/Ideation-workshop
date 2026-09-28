@@ -53,6 +53,18 @@ test('combining exports: an earlier export wholly inside a later one is detected
   assert.deepEqual(c.rows.map(r => r.Opportunity), ['Alpha task', 'Beta task', 'Gamma task', 'Delta task']);
 });
 
+test('combining exports: an export for a different client is set aside, not mixed in', () => {
+  const c = P.combineExports([
+    { name: '21 Sep', client: 'Other Co', rows: [row('O1', 'Answer client emails')] },
+    { name: '22 Sep', client: 'Client Co', rows: [row('O1', 'Alpha task'), row('O2', 'Beta task')] },
+    { name: '23 Sep', client: 'Client Co', rows: [row('O1', 'Gamma task')] }
+  ]);
+  assert.equal(c.client, 'Client Co');
+  assert.deepEqual(c.otherClient, [{ name: '21 Sep', client: 'Other Co', rows: 1 }]);
+  assert.deepEqual(c.subsets, []);
+  assert.equal(c.raw, 3);
+});
+
 test('flat import: every old row becomes an Opportunity with its quote as evidence, IDs never collide', () => {
   const reg = P.flatRowsToRegister([row('O1', 'Alpha task', { _from: '22 Sep O1' }), row('O1', 'Delta task', { _from: '23 Sep O1', Status: 'Validated' })]);
   assert.equal(reg.opportunities.length, 2);
@@ -110,4 +122,16 @@ test('schemas list every property as required, as structured output needs', () =
   };
   walk(P.captureSchema(['Finance']), 'capture');
   walk(P.consolidateSchema(['Finance']), 'consolidate');
+});
+
+test('September fixture: 21 Sep is a subset of 22 Sep, and 170 rows remain across 22 and 23 Sep', () => {
+  const fx = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'sept-exports.anon.json'), 'utf8')).exports;
+  const c = P.combineExports(fx);
+  assert.deepEqual(c.subsets, ['2026-09-21']);
+  assert.deepEqual(c.otherClient, []);
+  assert.equal(c.raw, 170);
+  assert.equal(c.rows.length, 170);
+  const reg = P.flatRowsToRegister(c.rows);
+  assert.equal(reg.opportunities.length, 170, 'every row imports, none lost');
+  assert.ok(!/switzerland|rolex|cartier|watchswiss/i.test(JSON.stringify(fx)), 'no client, brand or domain names in the fixture');
 });

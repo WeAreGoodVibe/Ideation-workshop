@@ -21,7 +21,11 @@ function readExports(dir) {
     const wb = XLSX.read(fs.readFileSync(path.join(dir, f)), { type: 'buffer' });
     const sheet = wb.Sheets['Opportunity Register'] || wb.Sheets[wb.SheetNames[0]];
     const m = f.match(/(\d{4}-\d{2}-\d{2})/);
-    return { name: m ? m[1] : f, file: f, rows: XLSX.utils.sheet_to_json(sheet, { defval: '' }) };
+    /* The Read Me tab opens "AI opportunity workshop: <client>, <teams>". */
+    const readMe = wb.Sheets['Read Me'];
+    const head = readMe && readMe.A1 ? String(readMe.A1.v || '') : '';
+    const cm = head.match(/workshop:\s*(.+?),\s*(.+)$/);
+    return { name: m ? m[1] : f, file: f, client: cm ? cm[1].trim() : '', teams: cm ? cm[2].trim() : '', rows: XLSX.utils.sheet_to_json(sheet, { defval: '' }) };
   }).sort((a, b) => a.name.localeCompare(b.name));
 }
 /* A fixture JSON ({ exports: [...] }) or a folder of exports. */

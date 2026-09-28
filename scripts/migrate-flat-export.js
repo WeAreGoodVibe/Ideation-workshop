@@ -41,6 +41,7 @@ async function plan(input, outDir, opts) {
   if (!fs.existsSync(path.join(outDir, 'decisions.json')) || opts.fresh) C.writeJSON(path.join(outDir, 'decisions.json'), decisions);
   const lines = ['# Migration review', '', 'Exports read: ' + exports.map(e => e.name + ' (' + e.rows.length + ' rows)').join(', '),
     'Contained in a later export, so skipped: ' + (combined.subsets.join(', ') || 'none'),
+    'A different client, so set aside: ' + (combined.otherClient.map(e => e.name + ' (' + e.client + ', ' + e.rows + ' rows)').join(', ') || 'none'),
     'Rows after skipping: ' + combined.raw + '. Identical titles kept once: ' + combined.exactRepeats + '. Rows imported: ' + before.opportunities.length + '.',
     'Rows the model did not place: ' + (res.unplaced.join(', ') || 'none'), '',
     '| Change | Kind | Before | After | Reason |', '|---|---|---|---|---|'];

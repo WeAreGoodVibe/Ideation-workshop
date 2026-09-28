@@ -58,7 +58,7 @@ function main() {
   const rx = pairs.map(([k, v]) => [new RegExp('\\b' + esc(k) + '(\'s)?\\b', 'gi'), v]);
   const clean = v => { let s = String(v == null ? '' : v); rx.forEach(([r, to]) => { s = s.replace(r, (m, poss) => to + (poss || '')); }); return s; };
 
-  const anon = exports.map(e => ({ name: e.name, rows: e.rows.map(r => { const o = {}; KEEP.forEach(k => { if (k in r) o[k] = clean(r[k]); }); return o; }) }));
+  const anon = exports.map(e => ({ name: e.name, client: clean(e.client || ''), teams: clean(e.teams || ''), rows: e.rows.map(r => { const o = {}; KEEP.forEach(k => { if (k in r) o[k] = clean(r[k]); }); return o; }) }));
   C.writeJSON(out, { note: 'Anonymised from real client exports. Names, company and supplier names replaced. Do not add raw exports to this repository.', exports: anon });
 
   const left = {};

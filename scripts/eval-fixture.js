@@ -27,6 +27,12 @@ function check(acc, exports, after, before) {
   after.items.filter(x => !x.auto).forEach((a, i, all) => all.slice(i + 1).forEach(b => { if (a.parentId === b.parentId && a.type === b.type && R.similarity(a.text, b.text) >= R.THRESHOLDS.merge) dupes.push(a.id + '~' + b.id); }));
   pass(!dupes.length, 'No duplicate rows' + (dupes.length ? ' (' + dupes.join(', ') + ')' : ''));
   acc.checks.forEach(ch => {
+    if (ch.enablerText) {
+      const re = new RegExp(ch.enablerText, 'i');
+      const hits = after.enablers.filter(e => re.test(e.text) && e.links.length >= (ch.minLinks || 1));
+      pass(hits.length > 0, ch.label + ' (' + (hits.map(e => e.id + ' "' + e.text + '" blocks ' + e.links.join(', ')).join('; ') || 'Enablers: ' + after.enablers.map(e => '"' + e.text + '" x' + e.links.length).join('; ')) + ')');
+      return;
+    }
     const re = new RegExp(ch.row, 'i');
     const src = before.opportunities.filter(o => re.test(o.title));
     if (!src.length) { pass(false, '"' + ch.row + '" matches no fixture row'); return; }
