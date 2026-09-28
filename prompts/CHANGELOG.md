@@ -2,6 +2,11 @@
 
 Each job reads the file named in `index.json`. To try a change, copy the file to the next version, edit it, point `index.json` at it, and run `npm run eval` on the fixture before and after.
 
+## consolidate.v4 (28 September 2026)
+
+- One v3 run in three split payroll into three Opportunities with the same owner and trigger, giving 19 against a target of 12 to 16. v4 adds a count-and-merge step when there are more than fifteen. The example is a month-end close, not payroll, so the fixture still measures the prompt.
+- The same run did find the Microsoft 365 file-move Enabler but worded it without "365", so the acceptance pattern was widened to accept the file operations on their own.
+
 ## consolidate.v3 (28 September 2026)
 
 - **Rows now include a notes column.** The migration was dropping the Notes column of old exports, where consultants wrote why an idea was not raised. On the September fixture, the only statement of the Microsoft 365 file-move limit sat there, so v2 could not find it. The prompt text is v2 with "notes" added to the column list; the rest of the fix is in `lib/pipeline.js`, `lib/register.js` and `lib/store.js`.

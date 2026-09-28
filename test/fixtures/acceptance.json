@@ -1,5 +1,5 @@
 {
-  "_note": "Acceptance criteria for the September fixture. 'row' patterns match ORIGINAL row titles in the anonymised fixture. 'enablerText' matches the text of an Enabler the consolidation creates: the M365 limit has no row of its own in the exports, only evidence inside rows (22 Sep O15, 23 Sep O22). The Enabler pattern needs a Microsoft 365 word and a file-operation word together, so a mailbox or login Enabler cannot pass it by mentioning Outlook. maxChildShare: no Opportunity holds more than this share of all children. Learning items are checked for repeats with the same merge threshold as children.",
+  "_note": "Acceptance criteria for the September fixture. 'row' patterns match ORIGINAL row titles in the anonymised fixture. 'enablerText' matches the text of an Enabler the consolidation creates: the M365 limit has no row of its own in the exports, only evidence inside rows (22 Sep O15, 23 Sep O22). The Enabler pattern needs a file operation (file move, move with rename, folder create) or a Microsoft 365 word with a file-operation word, so a mailbox or login Enabler cannot pass it by mentioning Outlook. maxChildShare: no Opportunity holds more than this share of all children. Learning items are checked for repeats with the same merge threshold as children.",
   "fixture": "test/fixtures/sept-exports.anon.json",
   "subsetExport": "2026-09-21",
   "rawRowsAcross": [
@@ -22,7 +22,7 @@
       "becomes": "learning"
     },
     {
-      "enablerText": "((365|m365|sharepoint|onedrive).*(write|move|rename)|(write|move|rename).*(365|m365|sharepoint|onedrive))",
+      "enablerText": "(file.?move|move.*rename|rename.*move|folder.?create|(365|m365|sharepoint|onedrive).*(write|move|rename)|(write|move|rename).*(365|m365|sharepoint|onedrive))",
       "minLinks": 2,
       "label": "Microsoft 365 write and file-move limit becomes an Enabler"
     }

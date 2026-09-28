@@ -2,5 +2,5 @@
   "_note": "The prompt version each job uses. Change a value to switch versions; keep the old file so results can be compared. Record every change in CHANGELOG.md.",
   "extract": "extract.v2.md",
   "second": "second-viewpoint.v2.md",
-  "consolidate": "consolidate.v3.md"
+  "consolidate": "consolidate.v4.md"
 }
