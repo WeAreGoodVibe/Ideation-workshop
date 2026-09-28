@@ -1,5 +1,7 @@
 # The hierarchical register
 
+Starting a new session on this? Read `docs/REGISTER-HANDOVER.md` first.
+
 On branch `claude/zen-curie-yb0fce`. Stages 1 to 5 are done: the model, its rules, the prompts, the eval, the database, and the page. The page runs the register for every workshop; the flat board is gone.
 
 ## The page (stage 5)
