@@ -1,6 +1,6 @@
 # Handover: the hierarchical register
 
-Updated 28 September 2026. Read this first in a new session about the register work. For the product as a whole (hosting, Supabase, roles, the workshop flow), read `docs/HANDOVER.md`. For how the register itself works, read `docs/REGISTER.md`.
+Updated 29 September 2026. Read this first in a new session about the register work. For the product as a whole (hosting, Supabase, roles, the workshop flow), read `docs/HANDOVER.md`. For how the register itself works, read `docs/REGISTER.md`.
 
 ## Paste this into the new conversation
 
@@ -20,7 +20,7 @@ specific headings, tables where they help. I am dyslexic and have ADHD.
 | Item | State |
 |---|---|
 | Branch | `claude/zen-curie-yb0fce`, pushed. Latest commit: "Move the page onto the hierarchical register". |
-| Live site | **Not affected yet.** Production tracks `main`, and this branch is not merged. Vercel builds a preview of the branch. |
+| Live site | **Live since 29 September 2026.** Max chose to merge to `main` before the seven checks below were run. The checks are still owed, now on the live site. |
 | Stage 1 and 2 | Model, rules, versioned prompts, consolidation pipeline. Done. |
 | Stage 3 | The eval. Runs, but the prompt decision below is still open. |
 | Stage 4 | Database migration 003. Applied to the live Supabase project on 28 September. Additive only. |
@@ -84,7 +84,9 @@ The side-by-side results page for eval 3 is at https://claude.ai/artifact/GSQ6ba
 
 ## Before this goes live
 
-**Nothing below has been tested against the real database.** Every stage 5 test used a local page with simulated Claude replies and a fake backend.
+**Merged to `main` on 29 September 2026 without these checks.** Max chose to release untested. Run them on the live site in a test workshop (never a client one) as soon as possible, and fix anything that fails on a new branch.
+
+Every stage 5 test before the merge used a local page with simulated Claude replies and a fake backend.
 
 1. **Open a Vercel preview of this branch and sign in as a facilitator.** Open a test workshop, not a client one.
 2. **Check a register loads.** Old flat opportunities should appear as workflows, with Needs qualification showing.
