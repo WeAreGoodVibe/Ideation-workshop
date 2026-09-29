@@ -20,7 +20,7 @@ specific headings, tables where they help. I am dyslexic and have ADHD.
 | Item | State |
 |---|---|
 | Branch | `claude/zen-curie-yb0fce`, pushed. Latest commit: "Move the page onto the hierarchical register". |
-| Live site | **Live since 29 September 2026.** Max chose to merge to `main` before the seven checks below were run. The checks are still owed, now on the live site. |
+| Live site | **Live since 29 September 2026** at https://ideation-workshop-three.vercel.app. Merged before the seven checks, then Max ran them on the live site the same day and everything looked right. |
 | Stage 1 and 2 | Model, rules, versioned prompts, consolidation pipeline. Done. |
 | Stage 3 | The eval. Runs, but the prompt decision below is still open. |
 | Stage 4 | Database migration 003. Applied to the live Supabase project on 28 September. Additive only. |
@@ -84,7 +84,7 @@ The side-by-side results page for eval 3 is at https://claude.ai/artifact/GSQ6ba
 
 ## Before this goes live
 
-**Merged to `main` on 29 September 2026 without these checks.** Max chose to release untested. Run them on the live site in a test workshop (never a client one) as soon as possible, and fix anything that fails on a new branch.
+**Done.** Merged to `main` on 29 September 2026 before these checks, then Max ran them on the live site the same day and reported that everything looked right. Keep the list for the next large change.
 
 Every stage 5 test before the merge used a local page with simulated Claude replies and a fake backend.
 
